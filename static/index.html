@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCS-MAILUSA - Safe Cargo Services</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'asian-red': '#C0392B',
+                        'asian-crimson': '#E74C3C',
+                        'asian-gold': '#F39C12',
+                        'asian-gold-dark': '#D4AC0D',
+                        'asian-maroon': '#8B0000',
+                        'asian-maroon-deep': '#7B0D0D',
+                        'asian-cream': '#FAF8F5',
+                        'asian-charcoal': '#2C3E50',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #FAF8F5; }
+        .drop-zone { transition: all 0.3s ease; }
+        .drop-zone.dragover { border-color: #C0392B; background-color: #fef2f2; transform: scale(1.01); }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-active { border-bottom: 3px solid #F39C12; color: #F39C12; font-weight: 600; }
+        .tab-inactive { border-bottom: 3px solid transparent; color: rgba(255,255,255,0.6); }
+        .tab-inactive:hover { color: rgba(255,255,255,0.9); border-color: rgba(243,156,18,0.4); }
+        .header-pattern {
+            background: linear-gradient(135deg, #7B0D0D 0%, #8B0000 50%, #7B0D0D 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .header-pattern::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 200px;
+            height: 100%;
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 10px,
+                rgba(243,156,18,0.05) 10px,
+                rgba(243,156,18,0.05) 20px
+            );
+        }
+        .header-pattern::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #D4AC0D, #F39C12, #D4AC0D);
+        }
+        .section-header { border-left: 4px solid #F39C12; padding-left: 12px; }
+        .card-warm {
+            background: white;
+            box-shadow: 0 4px 12px rgba(139, 0, 0, 0.06), 0 1px 3px rgba(0,0,0,0.04);
+            border: 1px solid rgba(212,172,13,0.12);
+        }
+        .input-warm {
+            border-color: #e8dfd3;
+            transition: all 0.2s ease;
+        }
+        .input-warm:focus {
+            border-color: #C0392B;
+            box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.12);
+            outline: none;
+        }
+        .table-header-red {
+            background-color: #8B0000;
+            color: white;
+        }
+        .table-row-alt:nth-child(even) {
+            background-color: #FAF8F5;
+        }
+        .table-row-alt:nth-child(odd) {
+            background-color: white;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useRef, useCallback } = React;
+
+        // ─── Waybills Tab ──────────────────────────────────────────────
+        function WaybillsTab() {
+            const [step, setStep] = useState(1);
+            const [info, setInfo] = useState({
+                master_awb: '',
+                voyage_number: '',
+                date_of_departure: '',
+                carrier_name: ''
+            });
+            const [xlsxFile, setXlsxFile] = useState(null);
+            const [parsedRows, setParsedRows] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [generating, setGenerating] = useState(false);
+            const [error, setError] = useState('');
+            const xlsxRef = useRef(null);
+
+            const handleChange = (field, value) => setInfo(prev => ({ ...prev, [field]: value }));
+
+            const handleXlsx = useCallback((e) => {
+                e.preventDefault();
+                e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
+                const file = e.dataTransfer?.files[0] || e.target.files?.[0];
+                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                    setXlsxFile(file);
+                    setError('');
+                } else {
+                    setError('Please upload an Excel file (.xlsx)');
+                }
+            }, []);
+
+            const dragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); };
+            const dragLeave = (e) => { e.currentTarget.classList.remove('dragover'); };
+
+            const goStep2 = () => {
+                if (!info.master_awb.trim()) { setError('Master AWB / BOL Number is required'); return; }
+                setError(''); setStep(2);
+            };
+
+            const goStep3 = async () => {
+                if (!xlsxFile) { setError('Please upload a spreadsheet'); return; }
+                setLoading(true); setError('');
+                const fd = new FormData();
+                fd.append('xlsx_file', xlsxFile);
+                fd.append('master_awb', info.master_awb);
+                fd.append('voyage_number', info.voyage_number);
+                fd.append('date_of_departure', info.date_of_departure);
+                fd.append('carrier_name', info.carrier_name);
+                try {
+                    const res = await fetch('/preview', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setParsedRows(data.rows || []);
+                        setStep(3);
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Failed to parse spreadsheet');
+                    }
+                } catch (e) {
+                    setError('Failed to connect to server.');
+                }
+                setLoading(false);
+            };
+
+            const generate = async () => {
+                setGenerating(true); setError('');
+                const fd = new FormData();
+                fd.append('xlsx_file', xlsxFile);
+                fd.append('master_awb', info.master_awb);
+                fd.append('voyage_number', info.voyage_number);
+                fd.append('date_of_departure', info.date_of_departure);
+                fd.append('carrier_name', info.carrier_name);
+                try {
+                    const res = await fetch('/generate-waybills', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const disp = res.headers.get('Content-Disposition');
+                        a.download = disp ? disp.split('filename=')[1] : 'waybills.zip';
+                        document.body.appendChild(a); a.click(); a.remove();
+                        window.URL.revokeObjectURL(url);
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Generation failed');
+                    }
+                } catch (e) {
+                    setError('Failed to generate waybills.');
+                }
+                setGenerating(false);
+            };
+
+            return (
+                <div className="fade-in">
+                    {/* Steps indicator */}
+                    <div className="flex justify-center mb-6">
+                        <div className="flex items-center space-x-3">
+                            {[1,2,3].map(s => (
+                                <React.Fragment key={s}>
+                                    <div className={`flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold ${step >= s ? 'bg-asian-red text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                        {step > s ? <i className="fas fa-check text-xs"></i> : s}
+                                    </div>
+                                    {s < 3 && <div className={`w-12 h-0.5 rounded ${step > s ? 'bg-asian-red' : 'bg-gray-200'}`}></div>}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                            <i className="fas fa-exclamation-circle mr-2"></i>{error}
+                            <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700"><i className="fas fa-times"></i></button>
+                        </div>
+                    )}
+
+                    {/* Step 1: Shipment Info */}
+                    {step === 1 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-clipboard-list text-asian-gold mr-2"></i>Shipment Information
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Master AWB / BOL <span className="text-asian-crimson">*</span></label>
+                                    <input type="text" value={info.master_awb} onChange={(e) => handleChange('master_awb', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., 176-12345678" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Voyage / Flight Number</label>
+                                    <input type="text" value={info.voyage_number} onChange={(e) => handleChange('voyage_number', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., AA1234" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Departure</label>
+                                    <input type="date" value={info.date_of_departure} onChange={(e) => handleChange('date_of_departure', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Carrier / Vessel Name</label>
+                                    <input type="text" value={info.carrier_name} onChange={(e) => handleChange('carrier_name', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., TROPICAL SHIPPING" />
+                                </div>
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <button onClick={goStep2} className="px-5 py-2 bg-asian-maroon text-asian-gold font-medium rounded-lg hover:bg-asian-maroon-deep flex items-center transition-colors">
+                                    Next <i className="fas fa-arrow-right ml-2"></i>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 2: Upload XLSX */}
+                    {step === 2 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-file-excel text-asian-gold mr-2"></i>Upload Shipment Spreadsheet
+                            </h3>
+                            <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-8 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
+                                onDrop={handleXlsx} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => xlsxRef.current?.click()}>
+                                {xlsxFile ? (
+                                    <div className="text-asian-maroon">
+                                        <i className="fas fa-file-excel text-4xl mb-2 text-asian-gold"></i>
+                                        <p className="font-medium">{xlsxFile.name}</p>
+                                        <p className="text-sm text-gray-500">{(xlsxFile.size / 1024).toFixed(1)} KB</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-asian-red opacity-60">
+                                        <i className="fas fa-file-upload text-4xl mb-2"></i>
+                                        <p className="font-medium">Drop Excel file here or click to browse</p>
+                                        <p className="text-sm">Supports .xlsx files</p>
+                                    </div>
+                                )}
+                            </div>
+                            <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsx} />
+                            <div className="mt-6 flex justify-between">
+                                <button onClick={() => setStep(1)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
+                                    <i className="fas fa-arrow-left mr-2"></i>Back
+                                </button>
+                                <button onClick={goStep3} disabled={loading} className="px-5 py-2 bg-asian-maroon text-asian-gold font-medium rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
+                                    {loading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Parsing...</> : <>Preview <i className="fas fa-arrow-right ml-2"></i></>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 3: Preview & Generate */}
+                    {step === 3 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-table text-asian-gold mr-2"></i>Preview & Generate
+                            </h3>
+                            <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-4 flex items-center justify-between text-sm">
+                                <span className="text-asian-maroon font-medium"><i className="fas fa-info-circle mr-1"></i>{parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''} found</span>
+                                <span className="text-asian-red">{parsedRows.length} waybill XML{parsedRows.length !== 1 ? 's' : ''} will be generated</span>
+                            </div>
+                            <div className="overflow-x-auto border border-asian-gold-dark/20 rounded-lg max-h-64 overflow-y-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="table-header-red sticky top-0">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left font-medium">#</th>
+                                            <th className="px-3 py-2 text-left font-medium">Tracking</th>
+                                            <th className="px-3 py-2 text-left font-medium">Buyer</th>
+                                            <th className="px-3 py-2 text-left font-medium">Weight</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {parsedRows.map((row, i) => (
+                                            <tr key={i} className="table-row-alt hover:bg-yellow-50 transition-colors">
+                                                <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
+                                                <td className="px-3 py-1.5 font-mono text-xs">{row.tracking_number || '-'}</td>
+                                                <td className="px-3 py-1.5">{row.buyer_name || '-'}</td>
+                                                <td className="px-3 py-1.5">{row.weight || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="mt-6 flex justify-between">
+                                <button onClick={() => setStep(2)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
+                                    <i className="fas fa-arrow-left mr-2"></i>Back
+                                </button>
+                                <button onClick={generate} disabled={generating} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
+                                    {generating ? <><i className="fas fa-spinner fa-spin mr-2"></i>Generating...</> : <><i className="fas fa-download mr-2"></i>Download Waybills ZIP</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+
+        // ─── Declarations Tab ──────────────────────────────────────────
+        function DeclarationsTab() {
+            const [step, setStep] = useState(1);
+            const [info, setInfo] = useState({
+                master_awb: '',
+                manifest_reference: '',
+                voyage_number: '',
+                date_of_departure: '',
+                carrier_name: ''
+            });
+            const [xlsxFile, setXlsxFile] = useState(null);
+            const [pdfFiles, setPdfFiles] = useState([]);
+            const [parsedRows, setParsedRows] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [generating, setGenerating] = useState(false);
+            const [error, setError] = useState('');
+            const xlsxRef = useRef(null);
+            const pdfRef = useRef(null);
+
+            const handleChange = (field, value) => setInfo(prev => ({ ...prev, [field]: value }));
+
+            const handleXlsx = useCallback((e) => {
+                e.preventDefault();
+                e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
+                const file = e.dataTransfer?.files[0] || e.target.files?.[0];
+                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                    setXlsxFile(file);
+                    setError('');
+                } else {
+                    setError('Please upload an Excel file (.xlsx)');
+                }
+            }, []);
+
+            const handlePdfs = useCallback((e) => {
+                e.preventDefault();
+                e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
+                const files = Array.from(e.dataTransfer?.files || e.target.files || []);
+                const pdfs = files.filter(f => f.name.endsWith('.pdf'));
+                if (pdfs.length > 0) setPdfFiles(prev => [...prev, ...pdfs]);
+            }, []);
+
+            const removePdf = (idx) => setPdfFiles(prev => prev.filter((_, i) => i !== idx));
+
+            const dragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); };
+            const dragLeave = (e) => { e.currentTarget.classList.remove('dragover'); };
+
+            const goStep2 = () => {
+                if (!info.master_awb.trim()) { setError('Master AWB / BOL Number is required'); return; }
+                if (!info.manifest_reference.trim()) { setError('Manifest Reference is required (obtain from ASYCUDA after uploading waybills)'); return; }
+                setError(''); setStep(2);
+            };
+
+            const goStep3 = async () => {
+                if (!xlsxFile) { setError('Please upload a spreadsheet'); return; }
+                setLoading(true); setError('');
+                const fd = new FormData();
+                fd.append('xlsx_file', xlsxFile);
+                fd.append('master_awb', info.master_awb);
+                fd.append('voyage_number', info.voyage_number);
+                fd.append('date_of_departure', info.date_of_departure);
+                fd.append('carrier_name', info.carrier_name);
+                fd.append('manifest_reference', info.manifest_reference);
+                try {
+                    const res = await fetch('/preview', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setParsedRows(data.rows || []);
+                        setStep(3);
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Failed to parse spreadsheet');
+                    }
+                } catch (e) {
+                    setError('Failed to connect to server.');
+                }
+                setLoading(false);
+            };
+
+            const generate = async () => {
+                setGenerating(true); setError('');
+                const fd = new FormData();
+                fd.append('xlsx_file', xlsxFile);
+                fd.append('master_awb', info.master_awb);
+                fd.append('manifest_reference', info.manifest_reference);
+                fd.append('voyage_number', info.voyage_number);
+                fd.append('date_of_departure', info.date_of_departure);
+                fd.append('carrier_name', info.carrier_name);
+                pdfFiles.forEach(pdf => fd.append('pdf_files', pdf));
+                try {
+                    const res = await fetch('/generate-declarations', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const disp = res.headers.get('Content-Disposition');
+                        a.download = disp ? disp.split('filename=')[1] : 'declarations.zip';
+                        document.body.appendChild(a); a.click(); a.remove();
+                        window.URL.revokeObjectURL(url);
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Generation failed');
+                    }
+                } catch (e) {
+                    setError('Failed to generate declarations.');
+                }
+                setGenerating(false);
+            };
+
+            return (
+                <div className="fade-in">
+                    {/* Steps indicator */}
+                    <div className="flex justify-center mb-6">
+                        <div className="flex items-center space-x-3">
+                            {[1,2,3].map(s => (
+                                <React.Fragment key={s}>
+                                    <div className={`flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold ${step >= s ? 'bg-asian-red text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                        {step > s ? <i className="fas fa-check text-xs"></i> : s}
+                                    </div>
+                                    {s < 3 && <div className={`w-12 h-0.5 rounded ${step > s ? 'bg-asian-red' : 'bg-gray-200'}`}></div>}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                            <i className="fas fa-exclamation-circle mr-2"></i>{error}
+                            <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700"><i className="fas fa-times"></i></button>
+                        </div>
+                    )}
+
+                    {/* Step 1: Shipment Info */}
+                    {step === 1 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-clipboard-list text-asian-gold mr-2"></i>Declaration Details
+                            </h3>
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5 text-sm text-amber-800">
+                                <i className="fas fa-info-circle mr-1"></i>
+                                Upload waybills to ASYCUDA first to obtain the Manifest Reference Number.
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Master AWB / BOL <span className="text-asian-crimson">*</span></label>
+                                    <input type="text" value={info.master_awb} onChange={(e) => handleChange('master_awb', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., 176-12345678" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Manifest Reference <span className="text-asian-crimson">*</span></label>
+                                    <input type="text" value={info.manifest_reference} onChange={(e) => handleChange('manifest_reference', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., MAN-2024-001" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Voyage / Flight Number</label>
+                                    <input type="text" value={info.voyage_number} onChange={(e) => handleChange('voyage_number', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., AA1234" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Departure</label>
+                                    <input type="date" value={info.date_of_departure} onChange={(e) => handleChange('date_of_departure', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Carrier / Vessel Name</label>
+                                    <input type="text" value={info.carrier_name} onChange={(e) => handleChange('carrier_name', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., TROPICAL SHIPPING" />
+                                </div>
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <button onClick={goStep2} className="px-5 py-2 bg-asian-maroon text-asian-gold font-medium rounded-lg hover:bg-asian-maroon-deep flex items-center transition-colors">
+                                    Next <i className="fas fa-arrow-right ml-2"></i>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 2: Upload Files */}
+                    {step === 2 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-upload text-asian-gold mr-2"></i>Upload Files
+                            </h3>
+
+                            {/* XLSX */}
+                            <div className="mb-5">
+                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Shipment Spreadsheet (.xlsx) <span className="text-asian-crimson">*</span></label>
+                                <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-6 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
+                                    onDrop={handleXlsx} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => xlsxRef.current?.click()}>
+                                    {xlsxFile ? (
+                                        <div className="text-asian-maroon">
+                                            <i className="fas fa-file-excel text-3xl mb-1 text-asian-gold"></i>
+                                            <p className="font-medium">{xlsxFile.name}</p>
+                                            <p className="text-sm text-gray-500">{(xlsxFile.size / 1024).toFixed(1)} KB</p>
+                                        </div>
+                                    ) : (
+                                        <div className="text-asian-red opacity-60">
+                                            <i className="fas fa-file-upload text-3xl mb-1"></i>
+                                            <p className="font-medium">Drop Excel file here or click to browse</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsx} />
+                            </div>
+
+                            {/* PDFs */}
+                            <div className="mb-5">
+                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Invoice PDFs (optional, for per-item pricing)</label>
+                                <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-5 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
+                                    onDrop={handlePdfs} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => pdfRef.current?.click()}>
+                                    <div className="text-asian-red opacity-60">
+                                        <i className="fas fa-file-pdf text-2xl mb-1"></i>
+                                        <p className="font-medium text-sm">Drop PDF invoices here or click to browse</p>
+                                        <p className="text-xs">Matched to rows by tracking number in filename</p>
+                                    </div>
+                                </div>
+                                <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfs} />
+                                {pdfFiles.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                        {pdfFiles.map((pdf, i) => (
+                                            <div key={i} className="flex items-center justify-between bg-asian-cream px-3 py-1.5 rounded-lg text-sm border border-asian-gold-dark/20">
+                                                <span className="text-asian-charcoal"><i className="fas fa-file-pdf text-asian-red mr-2"></i>{pdf.name}</span>
+                                                <button onClick={() => removePdf(i)} className="text-red-400 hover:text-red-600"><i className="fas fa-times"></i></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-6 flex justify-between">
+                                <button onClick={() => setStep(1)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
+                                    <i className="fas fa-arrow-left mr-2"></i>Back
+                                </button>
+                                <button onClick={goStep3} disabled={loading} className="px-5 py-2 bg-asian-maroon text-asian-gold font-medium rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
+                                    {loading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Parsing...</> : <>Preview <i className="fas fa-arrow-right ml-2"></i></>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 3: Preview & Generate */}
+                    {step === 3 && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                                <i className="fas fa-table text-asian-gold mr-2"></i>Preview & Generate
+                            </h3>
+                            <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-4 flex items-center justify-between text-sm">
+                                <span className="text-asian-maroon font-medium">
+                                    <i className="fas fa-info-circle mr-1"></i>{parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''} | {pdfFiles.length} invoice PDF{pdfFiles.length !== 1 ? 's' : ''}
+                                </span>
+                                <span className="text-asian-red">{parsedRows.length} declaration XML{parsedRows.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="overflow-x-auto border border-asian-gold-dark/20 rounded-lg max-h-64 overflow-y-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="table-header-red sticky top-0">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left font-medium">#</th>
+                                            <th className="px-3 py-2 text-left font-medium">Tracking</th>
+                                            <th className="px-3 py-2 text-left font-medium">Buyer</th>
+                                            <th className="px-3 py-2 text-left font-medium">Weight</th>
+                                            <th className="px-3 py-2 text-left font-medium">CIF</th>
+                                            <th className="px-3 py-2 text-left font-medium">Items</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {parsedRows.map((row, i) => (
+                                            <tr key={i} className="table-row-alt hover:bg-yellow-50 transition-colors">
+                                                <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
+                                                <td className="px-3 py-1.5 font-mono text-xs">{row.tracking_number || '-'}</td>
+                                                <td className="px-3 py-1.5">{row.buyer_name || '-'}</td>
+                                                <td className="px-3 py-1.5">{row.weight || '-'}</td>
+                                                <td className="px-3 py-1.5">${row.cif_verified || '0'}</td>
+                                                <td className="px-3 py-1.5">{row.items_count || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="mt-6 flex justify-between">
+                                <button onClick={() => setStep(2)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
+                                    <i className="fas fa-arrow-left mr-2"></i>Back
+                                </button>
+                                <button onClick={generate} disabled={generating} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
+                                    {generating ? <><i className="fas fa-spinner fa-spin mr-2"></i>Generating...</> : <><i className="fas fa-download mr-2"></i>Download Declarations ZIP</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+
+
+        // ─── Login Page ────────────────────────────────────────────────
+        function LoginPage({ onLogin }) {
+            const [username, setUsername] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+                const fd = new FormData();
+                fd.append('username', username);
+                fd.append('password', password);
+                try {
+                    const res = await fetch('/login', { method: 'POST', body: fd });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        sessionStorage.setItem('scs_auth', 'authenticated');
+                        onLogin();
+                    } else {
+                        setError('Invalid username or password');
+                    }
+                } catch (err) {
+                    setError('Failed to connect to server.');
+                }
+                setLoading(false);
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <div className="header-pattern text-center py-10">
+                        <h1 className="text-3xl font-bold text-asian-gold tracking-widest">
+                            <i className="fas fa-ship mr-3"></i>
+                            SCS-MAILUSA
+                        </h1>
+                        <p className="text-yellow-100/80 mt-2 text-sm tracking-wide">Safe Cargo Services · Anguilla</p>
+                    </div>
+                    <div className="flex-1 flex items-center justify-center px-4 py-12">
+                        <div className="w-full max-w-sm card-warm rounded-xl p-8">
+                            <h2 className="text-xl font-semibold text-asian-maroon mb-6 text-center">
+                                <i className="fas fa-lock text-asian-gold mr-2"></i>Sign In
+                            </h2>
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Username</label>
+                                    <input
+                                        type="text"
+                                        value={username}
+                                        onChange={e => setUsername(e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg"
+                                        placeholder="Enter username"
+                                        autoComplete="username"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-5">
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Password</label>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg"
+                                        placeholder="Enter password"
+                                        autoComplete="current-password"
+                                        required
+                                    />
+                                </div>
+                                {error && (
+                                    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm text-center px-3 py-2 rounded-lg">
+                                        <i className="fas fa-exclamation-circle mr-1"></i>{error}
+                                    </div>
+                                )}
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-2.5 bg-asian-red text-asian-gold font-bold rounded-lg hover:bg-asian-maroon flex items-center justify-center disabled:opacity-50 transition-colors">
+                                    {loading
+                                        ? <><i className="fas fa-spinner fa-spin mr-2"></i>Signing In...</>
+                                        : <><i className="fas fa-sign-in-alt mr-2"></i>Sign In</>}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+
+        // ─── Main App with Tabs ────────────────────────────────────────
+        function MainApp({ onSignOut }) {
+            const [activeTab, setActiveTab] = useState('waybills');
+
+            return (
+                <div className="max-w-5xl mx-auto px-4 py-0">
+                    {/* Header */}
+                    <div className="header-pattern text-center py-8 -mx-4 px-4 mb-0 rounded-b-lg relative">
+                        <h1 className="text-3xl font-bold text-asian-gold tracking-widest">
+                            <i className="fas fa-ship mr-3"></i>
+                            SCS-MAILUSA
+                        </h1>
+                        <p className="text-yellow-100/80 mt-2 text-sm tracking-wide">Safe Cargo Services · Anguilla</p>
+                        <button
+                            onClick={onSignOut}
+                            title="Sign Out"
+                            className="absolute top-4 right-4 text-xs border border-asian-gold/40 text-asian-gold px-3 py-1.5 rounded-lg hover:bg-black/20 flex items-center transition-colors">
+                            <i className="fas fa-sign-out-alt mr-1.5"></i>Sign Out
+                        </button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex justify-center bg-asian-red rounded-b-lg -mx-4 px-4 shadow-md">
+                        <button
+                            onClick={() => setActiveTab('waybills')}
+                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'waybills' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fas fa-file-alt mr-2"></i>House Waybills
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('declarations')}
+                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'declarations' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fas fa-file-invoice mr-2"></i>Declarations
+                        </button>
+                    </div>
+
+                    {/* Workflow hint */}
+                    <div className="mb-6 mt-6 text-center text-xs text-gray-400">
+                        {activeTab === 'waybills'
+                            ? 'Step 1 of 2: Generate waybills, upload them to ASYCUDA, then proceed to Declarations.'
+                            : 'Step 2 of 2: After waybills are registered in ASYCUDA, generate customs declarations here.'}
+                    </div>
+
+                    {/* Tab Content */}
+                    {activeTab === 'waybills' ? <WaybillsTab /> : <DeclarationsTab />}
+
+                    {/* Footer */}
+                    <div className="mt-8 mb-6 text-center text-gray-400 text-sm">
+                        <div className="w-24 h-px bg-gradient-to-r from-transparent via-asian-gold-dark to-transparent mx-auto mb-3"></div>
+                        <p>Safe Cargo Services — Sandy Ground, Anguilla | Declarant: DC2114</p>
+                    </div>
+                </div>
+            );
+        }
+
+
+
+        // ─── Root: Auth Gate ────────────────────────────────────────────
+        function Root() {
+            const [authenticated, setAuthenticated] = useState(
+                sessionStorage.getItem('scs_auth') === 'authenticated'
+            );
+
+            const handleLogin = () => setAuthenticated(true);
+
+            const handleSignOut = () => {
+                sessionStorage.removeItem('scs_auth');
+                setAuthenticated(false);
+            };
+
+            return authenticated
+                ? <MainApp onSignOut={handleSignOut} />
+                : <LoginPage onLogin={handleLogin} />;
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+    </script>
+</body>
+</html>
