@@ -1539,6 +1539,7 @@ def generate_customer_invoice_pdf(
     address: str,
     telephone: str,
     email: str,
+    arrival_date: str,
     shipper_name: str,
     shipper_invoice_number: str,
     description: str,
@@ -1785,7 +1786,7 @@ def generate_customer_invoice_pdf(
 
     # Info fields
     delivery_data = [
-        [Paragraph("<b>Date of Arrival:</b>", style_normal), Paragraph("_______________", style_normal)],
+        [Paragraph("<b>Date of Arrival:</b>", style_normal), Paragraph(arrival_date if arrival_date else "_______________", style_normal)],
         [Paragraph("<b>Tracking #:</b>", style_normal), Paragraph(tracking_number, style_normal)],
         [Paragraph("<b>Customer:</b>", style_normal), Paragraph(customer_name, style_normal)],
         [Paragraph("<b>Telephone:</b>", style_normal), Paragraph(telephone, style_normal)],
@@ -1828,6 +1829,7 @@ async def generate_customer_invoice(
     address: str = Form(""),
     telephone: str = Form(""),
     email: str = Form(""),
+    arrival_date: str = Form(""),
     shipper_name: str = Form(""),
     shipper_invoice_number: str = Form(""),
     description: str = Form(""),
@@ -1841,6 +1843,7 @@ async def generate_customer_invoice(
         address=address,
         telephone=telephone,
         email=email,
+        arrival_date=arrival_date,
         shipper_name=shipper_name,
         shipper_invoice_number=shipper_invoice_number,
         description=description,
