@@ -623,6 +623,349 @@
 
 
 
+
+        // ─── Customer Invoice Tab ──────────────────────────────────────
+        function CustomerInvoiceTab() {
+            const [form, setForm] = useState({
+                tracking_number: '',
+                customer_name: '',
+                address: '',
+                telephone: '',
+                email: '',
+                customs_duties: ''
+            });
+
+            const AASPA_FEE = 10.00;
+            const EXCHANGE_RATE = 2.6882;
+
+            const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+            const customsDuties = parseFloat(form.customs_duties) || 0;
+            const importClearanceFee = customsDuties * 0.05;
+            const totalEC = customsDuties + AASPA_FEE + importClearanceFee;
+            const totalUSD = totalEC / EXCHANGE_RATE;
+
+            const generateInvoice = () => {
+                const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+                const invoiceHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Invoice - ${form.tracking_number || 'N/A'}</title>
+<style>
+@media print {
+    .no-print { display: none !important; }
+    body { margin: 0; }
+}
+body {
+    font-family: 'Georgia', serif;
+    margin: 0;
+    padding: 20px;
+    color: #2C3E50;
+    font-size: 14px;
+    max-width: 210mm;
+    margin: 0 auto;
+}
+.print-btn-bar {
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 10px;
+}
+.print-btn {
+    background: #8B0000;
+    color: #F39C12;
+    border: none;
+    padding: 10px 30px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.print-btn:hover { background: #7B0D0D; }
+.invoice-section {
+    border: 1px solid #ddd;
+    padding: 30px;
+    margin-bottom: 0;
+}
+.company-name {
+    font-size: 26px;
+    font-weight: bold;
+    color: #8B0000;
+    margin: 0;
+}
+.company-address {
+    color: #666;
+    margin: 4px 0 0 0;
+    font-size: 13px;
+}
+.invoice-subtitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #8B0000;
+    background: linear-gradient(90deg, #FDF2E9, #FAF8F5);
+    border-left: 4px solid #F39C12;
+    padding: 8px 14px;
+    margin: 20px 0 16px 0;
+}
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 30px;
+    margin-bottom: 20px;
+}
+.info-item { font-size: 13px; }
+.info-label { font-weight: bold; color: #555; }
+.charges-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+.charges-table th {
+    background: #8B0000;
+    color: white;
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 13px;
+}
+.charges-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+}
+.charges-table tr:nth-child(even) { background: #FAF8F5; }
+.charges-table .total-row td {
+    font-weight: bold;
+    font-size: 14px;
+    border-top: 2px solid #8B0000;
+    background: #FDF2E9;
+}
+.exchange-note {
+    font-style: italic;
+    font-size: 11px;
+    color: #888;
+    margin-top: 8px;
+}
+.paid-box {
+    border: 3px solid #C0392B;
+    color: #C0392B;
+    font-size: 28px;
+    font-weight: bold;
+    text-align: center;
+    padding: 12px;
+    margin: 20px auto;
+    width: 180px;
+    border-radius: 6px;
+    letter-spacing: 6px;
+}
+.cut-line {
+    border: none;
+    border-top: 2px dashed #999;
+    margin: 30px 0;
+    position: relative;
+    text-align: center;
+}
+.cut-text {
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    margin: -8px 0 30px 0;
+    background: white;
+    display: inline-block;
+    padding: 0 15px;
+}
+.cut-container { text-align: center; }
+.delivery-section {
+    border: 1px solid #ddd;
+    padding: 30px;
+}
+.delivery-header {
+    font-size: 18px;
+    font-weight: bold;
+    color: #8B0000;
+    margin: 0 0 20px 0;
+    border-bottom: 2px solid #F39C12;
+    padding-bottom: 10px;
+}
+.delivery-field {
+    margin: 12px 0;
+    font-size: 13px;
+}
+.delivery-field .label { font-weight: bold; min-width: 160px; display: inline-block; }
+.delivery-field .line { border-bottom: 1px solid #333; display: inline-block; min-width: 200px; padding: 2px 4px; }
+.receipt-text {
+    font-style: italic;
+    margin: 24px 0;
+    padding: 12px;
+    background: #FAF8F5;
+    border-left: 3px solid #F39C12;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.signature-line {
+    margin-top: 40px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+.sig-block { text-align: center; }
+.sig-line { border-top: 1px solid #333; width: 220px; display: inline-block; margin-bottom: 4px; }
+.sig-line-short { border-top: 1px solid #333; width: 140px; display: inline-block; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="print-btn-bar no-print">
+    <button class="print-btn" onclick="window.print()">&#128438; Print Invoice</button>
+</div>
+
+<div class="invoice-section">
+    <p class="company-name">SAFE CARGO SERVICES</p>
+    <p class="company-address">Sandy Ground, Anguilla</p>
+    <div class="invoice-subtitle">CUSTOMS CLEARANCE INVOICE</div>
+
+    <div class="info-grid">
+        <div class="info-item"><span class="info-label">Date:</span> ${today}</div>
+        <div class="info-item"><span class="info-label">Tracking #:</span> ${form.tracking_number || 'N/A'}</div>
+        <div class="info-item"><span class="info-label">Customer:</span> ${form.customer_name || 'N/A'}</div>
+        <div class="info-item"><span class="info-label">Telephone:</span> ${form.telephone || 'N/A'}</div>
+        <div class="info-item"><span class="info-label">Address:</span> ${form.address || 'N/A'}</div>
+        <div class="info-item"><span class="info-label">Email:</span> ${form.email || 'N/A'}</div>
+    </div>
+
+    <table class="charges-table">
+        <thead>
+            <tr><th>Description</th><th style="text-align:right">Amount (EC$)</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Customs Duties</td><td style="text-align:right">EC$ ${customsDuties.toFixed(2)}</td></tr>
+            <tr><td>AASPA Fee</td><td style="text-align:right">EC$ ${AASPA_FEE.toFixed(2)}</td></tr>
+            <tr><td>Import Clearance Service Fee (5%)</td><td style="text-align:right">EC$ ${importClearanceFee.toFixed(2)}</td></tr>
+            <tr class="total-row"><td><strong>TOTAL</strong></td><td style="text-align:right"><strong>EC$ ${totalEC.toFixed(2)}</strong></td></tr>
+            <tr class="total-row"><td><strong>TOTAL (USD)</strong></td><td style="text-align:right"><strong>US$ ${totalUSD.toFixed(2)}</strong></td></tr>
+        </tbody>
+    </table>
+    <p class="exchange-note">Exchange rate: EC$2.6882 = US$1.00</p>
+
+    <div class="paid-box">&#9744; PAID</div>
+</div>
+
+<hr class="cut-line">
+<div class="cut-container"><span class="cut-text">&#9986; --- CUT HERE ---</span></div>
+
+<div class="delivery-section">
+    <p class="delivery-header">SAFE CARGO SERVICES &mdash; DELIVERY TICKET</p>
+
+    <div class="delivery-field"><span class="label">Date:</span> <span class="line">&nbsp;</span></div>
+    <div class="delivery-field"><span class="label">Tracking #:</span> <span class="line">${form.tracking_number || 'N/A'}</span></div>
+    <div class="delivery-field"><span class="label">Received by (Customer Name):</span> <span class="line">${form.customer_name || 'N/A'}</span></div>
+    <div class="delivery-field"><span class="label">Telephone:</span> <span class="line">${form.telephone || 'N/A'}</span></div>
+
+    <div class="receipt-text">
+        "I hereby confirm receipt of the above-mentioned goods and acknowledge payment of all applicable customs duties and fees."
+    </div>
+
+    <div class="signature-line">
+        <div class="sig-block">
+            <div class="sig-line"></div>
+            <div>Customer Signature</div>
+        </div>
+        <div class="sig-block">
+            <div class="sig-line-short"></div>
+            <div>Date</div>
+        </div>
+    </div>
+</div>
+</body>
+</html>`;
+
+                const newWindow = window.open('', '_blank');
+                if (newWindow) {
+                    newWindow.document.write(invoiceHTML);
+                    newWindow.document.close();
+                }
+            };
+
+            return (
+                <div className="fade-in">
+                    <div className="card-warm rounded-lg p-6">
+                        {/* Customer Details Section */}
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                            <i className="fas fa-user text-asian-gold mr-2"></i>Customer Details
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Tracking Number</label>
+                                <input type="text" value={form.tracking_number} onChange={(e) => handleChange('tracking_number', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., MUSA-123456" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Customer Name</label>
+                                <input type="text" value={form.customer_name} onChange={(e) => handleChange('customer_name', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="Full name" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Address</label>
+                                <textarea rows="2" value={form.address} onChange={(e) => handleChange('address', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg resize-none" placeholder="Customer address"></textarea>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Telephone</label>
+                                <input type="text" value={form.telephone} onChange={(e) => handleChange('telephone', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., +1 264 555 1234" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Email</label>
+                                <input type="text" value={form.email} onChange={(e) => handleChange('email', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="email@example.com" />
+                            </div>
+                        </div>
+
+                        {/* Charges Section */}
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4 mt-8">
+                            <i className="fas fa-calculator text-asian-gold mr-2"></i>Charges
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Customs Duties (EC$)</label>
+                                <input type="number" step="0.01" min="0" value={form.customs_duties} onChange={(e) => handleChange('customs_duties', e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="Enter amount from ASYCUDA" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">AASPA Fee (EC$)</label>
+                                <input type="text" value="10.00" readOnly
+                                    className="w-full px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Import Clearance Service Fee — 5% (EC$)</label>
+                                <input type="text" value={importClearanceFee.toFixed(2)} readOnly
+                                    className="w-full px-4 py-2 border rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed" />
+                            </div>
+                            <div></div>
+                            <div>
+                                <label className="block text-sm font-bold text-asian-maroon mb-1">Total (EC$)</label>
+                                <input type="text" value={totalEC.toFixed(2)} readOnly
+                                    className="w-full px-4 py-2 border-2 border-asian-gold rounded-lg bg-yellow-50 text-asian-maroon font-bold text-lg cursor-not-allowed" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-asian-maroon mb-1">Total (US$)</label>
+                                <input type="text" value={totalUSD.toFixed(2)} readOnly
+                                    className="w-full px-4 py-2 border-2 border-asian-gold rounded-lg bg-yellow-50 text-asian-maroon font-bold text-lg cursor-not-allowed" />
+                            </div>
+                        </div>
+
+                        <div className="mt-4 text-xs text-gray-400 italic">Exchange rate: EC$2.6882 = US$1.00</div>
+
+                        {/* Generate Button */}
+                        <div className="mt-6 flex justify-end">
+                            <button onClick={generateInvoice} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center transition-colors">
+                                <i className="fas fa-file-invoice mr-2"></i>Generate Invoice
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+
         // ─── Login Page ────────────────────────────────────────────────
         function LoginPage({ onLogin }) {
             const [username, setUsername] = useState('');
@@ -745,17 +1088,24 @@
                             className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'declarations' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-file-invoice mr-2"></i>Declarations
                         </button>
+                        <button
+                            onClick={() => setActiveTab('invoice')}
+                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'invoice' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fas fa-receipt mr-2"></i>Customer Invoice
+                        </button>
                     </div>
 
                     {/* Workflow hint */}
                     <div className="mb-6 mt-6 text-center text-xs text-gray-400">
                         {activeTab === 'waybills'
                             ? 'Step 1 of 2: Generate waybills, upload them to ASYCUDA, then proceed to Declarations.'
-                            : 'Step 2 of 2: After waybills are registered in ASYCUDA, generate customs declarations here.'}
+                            : activeTab === 'declarations'
+                            ? 'Step 2 of 2: After waybills are registered in ASYCUDA, generate customs declarations here.'
+                            : 'Generate a printable customs clearance invoice for your customer.'}
                     </div>
 
                     {/* Tab Content */}
-                    {activeTab === 'waybills' ? <WaybillsTab /> : <DeclarationsTab />}
+                    {activeTab === 'waybills' ? <WaybillsTab /> : activeTab === 'declarations' ? <DeclarationsTab /> : <CustomerInvoiceTab />}
 
                     {/* Footer */}
                     <div className="mt-8 mb-6 text-center text-gray-400 text-sm">
