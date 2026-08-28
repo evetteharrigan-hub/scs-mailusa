@@ -1520,5 +1520,334 @@ async def preview_xlsx(
     }
 
 
+
+# ─── Customer Invoice PDF Generation ────────────────────────────────────────────
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm, cm
+from reportlab.lib.colors import HexColor, black, white, grey
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+)
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+
+def generate_customer_invoice_pdf(
+    tracking_number: str,
+    customer_name: str,
+    address: str,
+    telephone: str,
+    email: str,
+    shipper_name: str,
+    shipper_invoice_number: str,
+    description: str,
+    total_order_value: float,
+    customs_duties: float,
+) -> bytes:
+    """Generate a professional customer invoice PDF and return as bytes."""
+
+    # Calculations
+    AASPA_FEE = 10.00
+    EXCHANGE_RATE = 2.6882
+    fee = customs_duties * 0.05
+    total_ec = customs_duties + AASPA_FEE + fee
+    total_usd = total_ec / EXCHANGE_RATE
+    today = datetime.now().strftime("%d %B %Y")
+
+    # Colors
+    dark_red = HexColor("#8B0000")
+    gold = HexColor("#F39C12")
+    light_grey_bg = HexColor("#F8F8F8")
+    border_grey = HexColor("#DDDDDD")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    style_company = ParagraphStyle(
+        'Company', parent=styles['Normal'],
+        fontSize=22, fontName='Helvetica-Bold', textColor=dark_red,
+        spaceAfter=2,
+    )
+    style_address = ParagraphStyle(
+        'Address', parent=styles['Normal'],
+        fontSize=10, textColor=grey, spaceAfter=1,
+    )
+    style_title = ParagraphStyle(
+        'Title', parent=styles['Normal'],
+        fontSize=14, fontName='Helvetica-Bold', textColor=dark_red,
+        alignment=TA_CENTER, spaceAfter=10, spaceBefore=10,
+    )
+    style_normal = ParagraphStyle(
+        'NormalCustom', parent=styles['Normal'],
+        fontSize=10, leading=14,
+    )
+    style_small = ParagraphStyle(
+        'SmallCustom', parent=styles['Normal'],
+        fontSize=9, leading=12, textColor=grey,
+    )
+    style_bold = ParagraphStyle(
+        'BoldCustom', parent=styles['Normal'],
+        fontSize=10, fontName='Helvetica-Bold', leading=14,
+    )
+    style_paid = ParagraphStyle(
+        'Paid', parent=styles['Normal'],
+        fontSize=24, fontName='Helvetica-Bold', textColor=HexColor("#C0392B"),
+        alignment=TA_CENTER,
+    )
+    style_cut = ParagraphStyle(
+        'Cut', parent=styles['Normal'],
+        fontSize=10, textColor=grey, alignment=TA_CENTER,
+        spaceBefore=6, spaceAfter=6,
+    )
+    style_delivery_header = ParagraphStyle(
+        'DeliveryHeader', parent=styles['Normal'],
+        fontSize=14, fontName='Helvetica-Bold', textColor=dark_red,
+        spaceAfter=12,
+    )
+    style_italic_small = ParagraphStyle(
+        'ItalicSmall', parent=styles['Normal'],
+        fontSize=9, fontName='Helvetica-Oblique', leading=13,
+        spaceBefore=14, spaceAfter=14,
+    )
+    style_sig = ParagraphStyle(
+        'Signature', parent=styles['Normal'],
+        fontSize=10, spaceBefore=30,
+    )
+
+    elements = []
+
+    # ─── SECTION 1: CUSTOMER INVOICE ────────────────────────────────────────
+
+    # Header
+    elements.append(Paragraph("SAFE CARGO SERVICES", style_company))
+    elements.append(Paragraph("Sandy Ground, Anguilla", style_address))
+    elements.append(Paragraph("Tel: (264) 235-7227", style_address))
+    elements.append(Spacer(1, 4 * mm))
+
+    # Gold line separator
+    elements.append(HRFlowable(
+        width="100%", thickness=2, color=gold,
+        spaceBefore=2, spaceAfter=8,
+    ))
+
+    # Title
+    elements.append(Paragraph("CUSTOMS CLEARANCE INVOICE", style_title))
+    elements.append(Spacer(1, 4 * mm))
+
+    # Two-column info row
+    info_data = [
+        [
+            Paragraph(f"<b>Date:</b> {today}", style_normal),
+            Paragraph(f"<b>Invoice #:</b> {shipper_invoice_number}", style_normal),
+        ],
+        [
+            Paragraph(f"<b>Tracking #:</b> {tracking_number}", style_normal),
+            Paragraph("", style_normal),
+        ],
+    ]
+    info_table = Table(info_data, colWidths=[85 * mm, 85 * mm])
+    info_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 4 * mm))
+
+    # Customer details box
+    cust_data = [
+        [Paragraph(f"<b>Customer Name:</b> {customer_name}", style_normal)],
+        [Paragraph(f"<b>Address:</b> {address}", style_normal)],
+        [Paragraph(f"<b>Telephone:</b> {telephone}", style_normal)],
+        [Paragraph(f"<b>Email:</b> {email}", style_normal)],
+    ]
+    cust_table = Table(cust_data, colWidths=[170 * mm])
+    cust_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.5, border_grey),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(cust_table)
+    elements.append(Spacer(1, 5 * mm))
+
+    # Shipment details table
+    ship_data = [
+        [Paragraph("<b>Field</b>", style_bold), Paragraph("<b>Value</b>", style_bold)],
+        [Paragraph("Shipper", style_normal), Paragraph(shipper_name, style_normal)],
+        [Paragraph("Shipper Invoice #", style_normal), Paragraph(shipper_invoice_number, style_normal)],
+        [Paragraph("Description of Goods", style_normal), Paragraph(description, style_normal)],
+        [Paragraph("Total Order Value", style_normal), Paragraph(f"US$ {total_order_value:.2f}", style_normal)],
+    ]
+    ship_table = Table(ship_data, colWidths=[60 * mm, 110 * mm])
+    ship_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), light_grey_bg),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(ship_table)
+    elements.append(Spacer(1, 5 * mm))
+
+    # Charges table
+    charges_data = [
+        [Paragraph("<b>Description</b>", style_bold), Paragraph("<b>Amount</b>", style_bold)],
+        [Paragraph("Customs Duties", style_normal), Paragraph(f"EC$ {customs_duties:.2f}", style_normal)],
+        [Paragraph("AASPA Fee", style_normal), Paragraph(f"EC$ {AASPA_FEE:.2f}", style_normal)],
+        [Paragraph("Import Clearance Service Fee (5%)", style_normal), Paragraph(f"EC$ {fee:.2f}", style_normal)],
+        [Paragraph("<b>TOTAL DUE</b>", style_bold), Paragraph(f"<b>EC$ {total_ec:.2f}</b>", style_bold)],
+        [Paragraph("<b>TOTAL DUE (USD)</b>", style_bold), Paragraph(f"<b>US$ {total_usd:.2f}</b>", style_bold)],
+    ]
+    charges_table = Table(charges_data, colWidths=[110 * mm, 60 * mm])
+    charges_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), dark_red),
+        ('TEXTCOLOR', (0, 0), (-1, 0), white),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 4), (-1, 5), HexColor("#FDF2E9")),
+        ('LINEABOVE', (0, 4), (-1, 4), 1.5, dark_red),
+    ]))
+    elements.append(charges_table)
+    elements.append(Spacer(1, 2 * mm))
+
+    # Exchange rate note
+    elements.append(Paragraph("Exchange Rate: EC$2.6882 = US$1.00", style_small))
+    elements.append(Spacer(1, 5 * mm))
+
+    # PAID box
+    paid_data = [[Paragraph("PAID \u2713", style_paid)]]
+    paid_table = Table(paid_data, colWidths=[60 * mm])
+    paid_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 3, HexColor("#C0392B")),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    # Right-align the paid box using a wrapper table
+    paid_wrapper = Table([[None, paid_table]], colWidths=[110 * mm, 60 * mm])
+    paid_wrapper.setStyle(TableStyle([
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(paid_wrapper)
+    elements.append(Spacer(1, 8 * mm))
+
+    # ─── DASHED SEPARATOR ───────────────────────────────────────────────────
+    elements.append(HRFlowable(
+        width="100%", thickness=1, color=grey,
+        spaceBefore=4, spaceAfter=2, dash=[4, 4],
+    ))
+    elements.append(Paragraph("\u2702  CUT HERE", style_cut))
+    elements.append(Spacer(1, 6 * mm))
+
+    # ─── SECTION 2: DELIVERY TICKET ────────────────────────────────────────
+
+    elements.append(Paragraph("SAFE CARGO SERVICES \u2014 DELIVERY TICKET", style_delivery_header))
+
+    # Gold underline
+    elements.append(HRFlowable(
+        width="100%", thickness=1.5, color=gold,
+        spaceBefore=0, spaceAfter=8,
+    ))
+
+    # Info fields
+    delivery_data = [
+        [Paragraph("<b>Date:</b>", style_normal), Paragraph("_______________", style_normal)],
+        [Paragraph("<b>Tracking #:</b>", style_normal), Paragraph(tracking_number, style_normal)],
+        [Paragraph("<b>Customer:</b>", style_normal), Paragraph(customer_name, style_normal)],
+        [Paragraph("<b>Telephone:</b>", style_normal), Paragraph(telephone, style_normal)],
+    ]
+    delivery_table = Table(delivery_data, colWidths=[40 * mm, 130 * mm])
+    delivery_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(delivery_table)
+    elements.append(Spacer(1, 5 * mm))
+
+    # Declaration text
+    elements.append(Paragraph(
+        "\u201cI hereby confirm receipt of the above-mentioned goods and acknowledge "
+        "payment of all applicable customs duties and fees.\u201d",
+        style_italic_small
+    ))
+
+    # Signature line
+    elements.append(Paragraph(
+        "Customer Signature: _________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+        "Date: ___________",
+        style_sig
+    ))
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.read()
+
+
+@app.post("/generate-customer-invoice")
+async def generate_customer_invoice(
+    tracking_number: str = Form(...),
+    customer_name: str = Form(...),
+    address: str = Form(""),
+    telephone: str = Form(""),
+    email: str = Form(""),
+    shipper_name: str = Form(""),
+    shipper_invoice_number: str = Form(""),
+    description: str = Form(""),
+    total_order_value: float = Form(0.0),
+    customs_duties: float = Form(0.0),
+):
+    """Generate a customer invoice PDF and return it as a downloadable file."""
+    pdf_bytes = generate_customer_invoice_pdf(
+        tracking_number=tracking_number,
+        customer_name=customer_name,
+        address=address,
+        telephone=telephone,
+        email=email,
+        shipper_name=shipper_name,
+        shipper_invoice_number=shipper_invoice_number,
+        description=description,
+        total_order_value=total_order_value,
+        customs_duties=customs_duties,
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="SCS_Invoice_{tracking_number}.pdf"'
+        }
+    )
+
+
 # Mount static files LAST so API routes take priority
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
