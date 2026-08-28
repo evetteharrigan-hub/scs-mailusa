@@ -1809,12 +1809,23 @@ def generate_customer_invoice_pdf(
         style_italic_small
     ))
 
-    # Signature line
+    # Signature line — full page width
     elements.append(Paragraph(
-        "Customer Signature: _________________________&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+        "Customer Signature: ________________________________________________&nbsp;&nbsp;"
         "Date: ___________",
         style_sig
     ))
+    elements.append(Spacer(1, 3 * mm))
+
+    # Comments section
+    style_comments = ParagraphStyle(
+        'Comments', parent=styles['Normal'],
+        fontSize=9, leading=14,
+    )
+    elements.append(Paragraph("Comments:", style_comments))
+    elements.append(Paragraph("_________________________________________________________________", style_comments))
+    elements.append(Paragraph("_________________________________________________________________", style_comments))
+    elements.append(Paragraph("_________________________________________________________________", style_comments))
 
     # Build PDF
     doc.build(elements)
