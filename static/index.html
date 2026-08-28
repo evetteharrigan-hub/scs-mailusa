@@ -705,30 +705,47 @@
 
                 const subject = encodeURIComponent(`Your Package Is Ready for Collection - ${form.customer_name}`);
                 const body = encodeURIComponent(
-`Dear ${form.customer_name},
+`SAFE CARGO SERVICES
+Sandy Ground, Anguilla  |  Tel: (264) 498-0194
+CUSTOMS CLEARANCE INVOICE
+---------------------------------------------
 
-We are pleased to inform you that your package has arrived and is now ready for collection.
+Dear ${form.customer_name},
 
-Please visit us at the Safe Cargo Services Warehouse, located in Sandy Ground, Anguilla — just before the football field — at your earliest convenience during our office hours.
+We are pleased to inform you that your package has arrived and is now ready for collection at the Safe Cargo Services Warehouse, located in Sandy Ground, Anguilla — just before the football field.
 
-PACKAGE DETAILS
----------------
-Tracking Number:  ${form.tracking_number}
-Date of Arrival:  ${form.arrival_date}
-Description:      ${form.description}
-Shipper:          ${form.shipper_name}
+CUSTOMER DETAILS
+---------------------------------------------
+Name:     ${form.customer_name}
+Address:  ${form.address}
+Tel:      ${form.telephone}
+Email:    ${form.email}
+
+SHIPMENT DETAILS
+---------------------------------------------
+Tracking Number:    ${form.tracking_number}
+Date of Arrival:    ${form.arrival_date}
+Shipper:            ${form.shipper_name}
+Invoice #:          ${form.shipper_invoice_number}
+Description:        ${form.description}
+Total Order Value:  US$ ${(parseFloat(form.total_order_value) || 0).toFixed(2)}
 
 CHARGES DUE (payable upon collection)
---------------------------------------
-Customs Duties:                    EC$ ${(parseFloat(form.customs_duties) || 0).toFixed(2)}
-AASPA Fee:                         EC$ 10.00
-Import Clearance Service Fee (5%): EC$ ${serviceFee.toFixed(2)}
-                                   ─────────────
-TOTAL DUE:                         EC$ ${totalECVal.toFixed(2)}  (US$ ${totalUSDVal.toFixed(2)})
+---------------------------------------------
+Customs Duties:                      EC$ ${(parseFloat(form.customs_duties) || 0).toFixed(2)}
+AASPA Fee:                           EC$ 10.00
+Import Clearance Service Fee (5%):   EC$ ${serviceFee.toFixed(2)}
+---------------------------------------------
+TOTAL DUE:                           EC$ ${totalECVal.toFixed(2)}
+TOTAL DUE (USD):                     US$ ${totalUSDVal.toFixed(2)}
 
-Kindly present a valid government-issued photo ID upon collection. Payment may be made in cash (EC or USD) or by bank transfer.
+Exchange Rate: EC$2.6882 = US$1.00
 
-Should you have any questions or require further assistance, please do not hesitate to contact us.
+---------------------------------------------
+Kindly present a valid government-issued photo ID upon collection.
+Payment may be made in cash (EC or USD) or by bank transfer.
+
+Should you have any questions, please do not hesitate to contact us.
 
 Office Hours: Monday – Friday, 8:00 AM – 4:30 PM
 Tel: (264) 498-0194
