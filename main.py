@@ -1785,7 +1785,7 @@ def generate_customer_invoice_pdf(
 
     # Info fields
     delivery_data = [
-        [Paragraph("<b>Date:</b>", style_normal), Paragraph("_______________", style_normal)],
+        [Paragraph("<b>Date of Arrival:</b>", style_normal), Paragraph("_______________", style_normal)],
         [Paragraph("<b>Tracking #:</b>", style_normal), Paragraph(tracking_number, style_normal)],
         [Paragraph("<b>Customer:</b>", style_normal), Paragraph(customer_name, style_normal)],
         [Paragraph("<b>Telephone:</b>", style_normal), Paragraph(telephone, style_normal)],
