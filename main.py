@@ -1632,8 +1632,7 @@ def generate_customer_invoice_pdf(
 
     # Header
     elements.append(Paragraph("SAFE CARGO SERVICES", style_company))
-    elements.append(Paragraph("Sandy Ground, Anguilla", style_address))
-    elements.append(Paragraph("Tel: (264) 235-7227", style_address))
+    elements.append(Paragraph("Sandy Ground, Anguilla  |  Tel: (264) 498-0194", style_address))
     elements.append(Spacer(1, 2 * mm))
 
     # Gold line separator
