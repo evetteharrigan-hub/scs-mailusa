@@ -4,6 +4,7 @@ import re
 import zipfile
 from datetime import datetime
 from typing import Optional, List
+import json
 from dataclasses import dataclass, field
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -1869,6 +1870,85 @@ async def generate_customer_invoice(
         }
     )
 
+
+
+@app.post("/generate-batch-invoices")
+async def generate_batch_invoices(
+    xlsx_file: UploadFile = File(...),
+    date_of_departure: str = Form(""),
+    arrival_date: str = Form(""),
+    master_awb: str = Form(""),
+    carrier_name: str = Form(""),
+    duties_map: str = Form("{}"),
+):
+    """Generate customer invoice PDFs for all customers in the spreadsheet and return as ZIP."""
+    try:
+        duties = json.loads(duties_map)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid duties_map JSON")
+
+    xlsx_bytes = await xlsx_file.read()
+    rows = parse_xlsx(xlsx_bytes)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid data rows found in the spreadsheet.")
+
+    zip_buffer = io.BytesIO()
+    invoice_count = 0
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for row in rows:
+            tracking = safe_str(row.get("tracking_number", "")).strip()
+            if not tracking:
+                continue
+
+            customs_duties_val = float(duties.get(tracking, 0))
+            if customs_duties_val <= 0:
+                continue
+
+            buyer_name = safe_str(row.get("buyer_name", ""))
+            buyer_addr_parts = filter(None, [
+                safe_str(row.get("buyer_address1", "")),
+                safe_str(row.get("buyer_city", "")),
+                safe_str(row.get("buyer_state", "")),
+            ])
+            address = ", ".join(buyer_addr_parts)
+            telephone = safe_str(row.get("buyer_phone", ""))
+            email = safe_str(row.get("buyer_email", ""))
+            shipper_name = safe_str(row.get("shipper", ""))
+            shipper_invoice_number = safe_str(row.get("cn35_awb", ""))
+            items_desc = parse_bracketed_array(safe_str(row.get("items_description", "")))
+            description = ", ".join(items_desc) if items_desc else safe_str(row.get("items_description", ""))
+            total_order_value = float(safe_str(row.get("fob_verified", "0")) or "0")
+
+            pdf_bytes = generate_customer_invoice_pdf(
+                tracking_number=tracking,
+                customer_name=buyer_name,
+                address=address,
+                telephone=telephone,
+                email=email,
+                arrival_date=arrival_date,
+                shipper_name=shipper_name,
+                shipper_invoice_number=shipper_invoice_number,
+                description=description,
+                total_order_value=total_order_value,
+                customs_duties=customs_duties_val,
+            )
+            zf.writestr(f"SCS_Invoice_{tracking}.pdf", pdf_bytes)
+            invoice_count += 1
+
+    if invoice_count == 0:
+        raise HTTPException(status_code=400, detail="No invoices generated. Ensure duties are entered for at least one customer.")
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="batch_invoices.zip"'
+        }
+    )
 
 # Mount static files LAST so API routes take priority
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

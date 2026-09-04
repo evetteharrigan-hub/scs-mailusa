@@ -345,6 +345,10 @@
             const [loading, setLoading] = useState(false);
             const [generating, setGenerating] = useState(false);
             const [error, setError] = useState('');
+            const [declarationsGenerated, setDeclarationsGenerated] = useState(false);
+            const [dutiesMap, setDutiesMap] = useState({});
+            const [arrivalDate, setArrivalDate] = useState('');
+            const [generatingInvoices, setGeneratingInvoices] = useState(false);
             const xlsxRef = useRef(null);
             const pdfRef = useRef(null);
 
@@ -428,6 +432,7 @@
                         a.download = disp ? disp.split('filename=')[1] : 'declarations.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
+                        setDeclarationsGenerated(true);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Generation failed');
@@ -437,6 +442,49 @@
                 }
                 setGenerating(false);
             };
+            const handleDutyChange = (tracking, value) => {
+                setDutiesMap(prev => ({ ...prev, [tracking]: value }));
+            };
+
+            const generateBatchInvoices = async () => {
+                const activeDuties = {};
+                Object.entries(dutiesMap).forEach(([k, v]) => {
+                    const val = parseFloat(v);
+                    if (val > 0) activeDuties[k] = val;
+                });
+                if (Object.keys(activeDuties).length === 0) {
+                    setError('Enter customs duties for at least one customer.');
+                    return;
+                }
+                setGeneratingInvoices(true); setError('');
+                const fd = new FormData();
+                fd.append('xlsx_file', xlsxFile);
+                fd.append('date_of_departure', info.date_of_departure);
+                fd.append('arrival_date', arrivalDate);
+                fd.append('master_awb', info.master_awb);
+                fd.append('carrier_name', info.carrier_name);
+                fd.append('duties_map', JSON.stringify(activeDuties));
+                try {
+                    const res = await fetch('/generate-batch-invoices', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'batch_invoices.zip';
+                        document.body.appendChild(a); a.click(); a.remove();
+                        window.URL.revokeObjectURL(url);
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Failed to generate invoices');
+                    }
+                } catch (e) {
+                    setError('Failed to generate batch invoices.');
+                }
+                setGeneratingInvoices(false);
+            };
+
+
 
             return (
                 <div className="fade-in">
@@ -613,6 +661,68 @@
                                 </button>
                                 <button onClick={generate} disabled={generating} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
                                     {generating ? <><i className="fas fa-spinner fa-spin mr-2"></i>Generating...</> : <><i className="fas fa-download mr-2"></i>Download Declarations ZIP</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Step 3 — Customer Invoices (appears after declarations generated) */}
+                    {declarationsGenerated && step === 3 && (
+                        <div className="card-warm rounded-lg p-6 mt-6 fade-in">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-2">
+                                <i className="fas fa-file-invoice-dollar text-asian-gold mr-2"></i>STEP 3 — CUSTOMER INVOICES
+                            </h3>
+                            <p className="text-sm text-gray-500 mb-4">Enter customs duties for each customer to generate their invoices.</p>
+
+                            <div className="overflow-x-auto border border-asian-gold-dark/20 rounded-lg max-h-72 overflow-y-auto mb-4">
+                                <table className="w-full text-sm">
+                                    <thead className="table-header-red sticky top-0">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left font-medium">Tracking #</th>
+                                            <th className="px-3 py-2 text-left font-medium">Customer Name</th>
+                                            <th className="px-3 py-2 text-left font-medium">Customs Duties (EC$)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {parsedRows.map((row, i) => (
+                                            <tr key={i} className="table-row-alt hover:bg-yellow-50 transition-colors">
+                                                <td className="px-3 py-1.5 font-mono text-xs">{row.tracking_number || '-'}</td>
+                                                <td className="px-3 py-1.5">{row.buyer_name || '-'}</td>
+                                                <td className="px-3 py-1.5">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        placeholder="0.00"
+                                                        value={dutiesMap[row.tracking_number] || ''}
+                                                        onChange={(e) => handleDutyChange(row.tracking_number, e.target.value)}
+                                                        className="input-warm w-32 px-2 py-1 border rounded text-sm"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
+                                <input
+                                    type="date"
+                                    value={arrivalDate}
+                                    onChange={(e) => setArrivalDate(e.target.value)}
+                                    className="input-warm w-full md:w-64 px-4 py-2 border rounded-lg"
+                                />
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={generateBatchInvoices}
+                                    disabled={generatingInvoices}
+                                    className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors">
+                                    {generatingInvoices
+                                        ? <><i className="fas fa-spinner fa-spin mr-2"></i>Generating Invoices...</>
+                                        : <><i className="fas fa-file-invoice-dollar mr-2"></i>Generate All Invoices</>}
                                 </button>
                             </div>
                         </div>
