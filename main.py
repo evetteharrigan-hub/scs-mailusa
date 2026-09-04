@@ -1008,7 +1008,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
             x.append('<Attached_documents>')
             x.append('<Attached_document_code>BOL</Attached_document_code>')
             x.append('<Attached_document_name>Bill of Lading or Air Waybill</Attached_document_name>')
-            x.append(f'<Attached_document_reference>{master_awb}</Attached_document_reference>')
+            x.append(f'<Attached_document_reference>{tracking}</Attached_document_reference>')
             x.append(f'<Attached_document_date>{formatted_date}</Attached_document_date>')
             x.append('</Attached_documents>')
         
@@ -1069,7 +1069,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
         x.append('</Goods_description>')
         
         x.append('<Previous_doc>')
-        x.append(f'<Summary_declaration>{master_awb}</Summary_declaration>')
+        x.append(f'<Summary_declaration>{tracking}</Summary_declaration>')
         x.append('<Summary_declaration_sl><null/></Summary_declaration_sl>')
         x.append('<Previous_document_reference><null/></Previous_document_reference>')
         x.append('<Previous_warehouse_code><null/></Previous_warehouse_code>')
