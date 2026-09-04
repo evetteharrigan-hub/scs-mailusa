@@ -485,7 +485,9 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
     prev_doc_ref = f"{voyage}-{row_index}"
     
     items_desc = parse_bracketed_array(safe_str(row_data.get("items_description", "")))
-    items_count = len(items_desc) if items_desc else 1
+    # Use Items column as package count — it represents the number of packages in the shipment
+    items_col = safe_str(row_data.get("items", "")).strip()
+    items_count = int(items_col) if items_col and items_col.isdigit() else (len(items_desc) if items_desc else 1)
     goods_desc_joined = ", ".join(items_desc) if items_desc else safe_str(row_data.get("items_description", ""))
     hs_codes = parse_bracketed_array(safe_str(row_data.get("items_hs_codes", "")))
     first_hs = hs_codes[0] if hs_codes else ""
