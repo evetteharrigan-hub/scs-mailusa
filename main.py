@@ -414,22 +414,18 @@ def match_invoice_to_row(row_tracking: str, invoices: dict) -> Optional[InvoiceD
 
 
 def parse_bracketed_array(value: str) -> list:
-    """Parse bracketed arrays like [item1][item2][item3] or [item1, item2, item3] into a list."""
+    """Parse bracketed arrays like [item1][item2][item3] into a list.
+    Each [bracket] is treated as ONE item — commas inside brackets are NOT separators.
+    """
     if not value or str(value).strip() == "":
         return []
     value = str(value).strip()
-    # Check for [item1][item2][item3] format (multiple bracket pairs)
+    # Extract each [bracket] as a whole item — never split on commas inside brackets
     matches = re.findall(r'\[([^\]]*)\]', value)
-    if len(matches) > 1:
-        return [m.strip() for m in matches]
-    # Single bracket pair [item1, item2, item3] - split by comma
-    if matches and len(matches) == 1 and ',' in matches[0]:
-        return [v.strip() for v in matches[0].split(',') if v.strip()]
-    # Single bracket pair with one item
     if matches:
-        return [m.strip() for m in matches]
-    # No brackets - split by comma
-    return [v.strip() for v in value.split(',') if v.strip()]
+        return [m.strip() for m in matches if m.strip()]
+    # No brackets at all — treat whole string as one item
+    return [value.strip()] if value.strip() else []
 
 
 def safe_str(val) -> str:
