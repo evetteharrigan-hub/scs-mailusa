@@ -340,7 +340,7 @@
                 carrier_name: ''
             });
             const [xlsxFile, setXlsxFile] = useState(null);
-            const [pdfFiles, setPdfFiles] = useState([]);
+            const [invoiceZip, setInvoiceZip] = useState(null);
             const [parsedRows, setParsedRows] = useState([]);
             const [loading, setLoading] = useState(false);
             const [generating, setGenerating] = useState(false);
@@ -350,7 +350,7 @@
             const [arrivalDate, setArrivalDate] = useState('');
             const [generatingInvoices, setGeneratingInvoices] = useState(false);
             const xlsxRef = useRef(null);
-            const pdfRef = useRef(null);
+            const zipRef = useRef(null);
 
             const handleChange = (field, value) => setInfo(prev => ({ ...prev, [field]: value }));
 
@@ -366,15 +366,17 @@
                 }
             }, []);
 
-            const handlePdfs = useCallback((e) => {
+            const handleInvoiceZip = useCallback((e) => {
                 e.preventDefault();
                 e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
-                const files = Array.from(e.dataTransfer?.files || e.target.files || []);
-                const pdfs = files.filter(f => f.name.endsWith('.pdf'));
-                if (pdfs.length > 0) setPdfFiles(prev => [...prev, ...pdfs]);
+                const file = e.dataTransfer?.files[0] || e.target.files?.[0];
+                if (file && file.name.toLowerCase().endsWith('.zip')) {
+                    setInvoiceZip(file);
+                    setError('');
+                } else if (file) {
+                    setError('Please upload a ZIP file containing invoice PDFs');
+                }
             }, []);
-
-            const removePdf = (idx) => setPdfFiles(prev => prev.filter((_, i) => i !== idx));
 
             const dragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); };
             const dragLeave = (e) => { e.currentTarget.classList.remove('dragover'); };
@@ -420,7 +422,7 @@
                 fd.append('voyage_number', info.voyage_number);
                 fd.append('date_of_departure', info.date_of_departure);
                 fd.append('carrier_name', info.carrier_name);
-                pdfFiles.forEach(pdf => fd.append('pdf_files', pdf));
+                if (invoiceZip) fd.append('invoice_zip', invoiceZip);
                 try {
                     const res = await fetch('/generate-declarations', { method: 'POST', body: fd });
                     if (res.ok) {
@@ -582,28 +584,26 @@
                                 <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsx} />
                             </div>
 
-                            {/* PDFs */}
+                            {/* Invoice ZIP */}
                             <div className="mb-5">
-                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Invoice PDFs (optional, for per-item pricing)</label>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Upload Invoice ZIP File (required for declarations)</label>
                                 <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-5 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
-                                    onDrop={handlePdfs} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => pdfRef.current?.click()}>
-                                    <div className="text-asian-red opacity-60">
-                                        <i className="fas fa-file-pdf text-2xl mb-1"></i>
-                                        <p className="font-medium text-sm">Drop PDF invoices here or click to browse</p>
-                                        <p className="text-xs">Matched to rows by tracking number in filename</p>
-                                    </div>
+                                    onDrop={handleInvoiceZip} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => zipRef.current?.click()}>
+                                    {invoiceZip ? (
+                                        <div className="text-asian-maroon">
+                                            <i className="fas fa-file-archive text-2xl mb-1 text-asian-gold"></i>
+                                            <p className="font-medium text-sm">{invoiceZip.name}</p>
+                                            <p className="text-xs text-gray-500">{(invoiceZip.size / 1024).toFixed(1)} KB</p>
+                                        </div>
+                                    ) : (
+                                        <div className="text-asian-red opacity-60">
+                                            <i className="fas fa-file-archive text-2xl mb-1"></i>
+                                            <p className="font-medium text-sm">Drag & drop your invoice ZIP file here, or click to browse</p>
+                                            <p className="text-xs">ZIP containing invoice PDFs — matched to rows by tracking number in filename</p>
+                                        </div>
+                                    )}
                                 </div>
-                                <input ref={pdfRef} type="file" accept=".pdf" multiple className="hidden" onChange={handlePdfs} />
-                                {pdfFiles.length > 0 && (
-                                    <div className="mt-2 space-y-1">
-                                        {pdfFiles.map((pdf, i) => (
-                                            <div key={i} className="flex items-center justify-between bg-asian-cream px-3 py-1.5 rounded-lg text-sm border border-asian-gold-dark/20">
-                                                <span className="text-asian-charcoal"><i className="fas fa-file-pdf text-asian-red mr-2"></i>{pdf.name}</span>
-                                                <button onClick={() => removePdf(i)} className="text-red-400 hover:text-red-600"><i className="fas fa-times"></i></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
+                                <input ref={zipRef} type="file" accept=".zip" className="hidden" onChange={handleInvoiceZip} />
                             </div>
 
                             <div className="mt-6 flex justify-between">
@@ -625,7 +625,7 @@
                             </h3>
                             <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-4 flex items-center justify-between text-sm">
                                 <span className="text-asian-maroon font-medium">
-                                    <i className="fas fa-info-circle mr-1"></i>{parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''} | {pdfFiles.length} invoice PDF{pdfFiles.length !== 1 ? 's' : ''}
+                                    <i className="fas fa-info-circle mr-1"></i>{parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''} | {invoiceZip ? '1 invoice ZIP' : 'No invoice ZIP'}
                                 </span>
                                 <span className="text-asian-red">{parsedRows.length} declaration XML{parsedRows.length !== 1 ? 's' : ''}</span>
                             </div>

@@ -1215,9 +1215,9 @@ async def generate_xmls(
     date_of_departure: str = Form(""),
     carrier_name: str = Form(""),
     manifest_reference: str = Form(""),
-    pdf_files: List[UploadFile] = File(default=[]),
+    invoice_zip: Optional[UploadFile] = File(default=None),
 ):
-    """Generate ASYCUDA XML files (both waybills + declarations) from uploaded spreadsheet and optional invoice PDFs.
+    """Generate ASYCUDA XML files (both waybills + declarations) from uploaded spreadsheet and optional invoice ZIP.
     Legacy combined endpoint - kept for backward compatibility."""
     
     if not master_awb or master_awb.strip() == "":
@@ -1241,17 +1241,20 @@ async def generate_xmls(
     
     invoices = {}
     pdf_data = []
-    if pdf_files:
-        pdf_data = []
-        for pdf_file in pdf_files:
-            if pdf_file.filename and pdf_file.filename.endswith('.pdf'):
-                pdf_bytes = await pdf_file.read()
-                if pdf_bytes:
-                    pdf_data.append((pdf_file.filename, pdf_bytes))
-        if pdf_data:
-            print(f"Parsing {len(pdf_data)} invoice PDF(s)...")
-            invoices = parse_all_invoices(pdf_data)
-            print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
+    if invoice_zip and invoice_zip.filename:
+        zip_bytes = await invoice_zip.read()
+        if zip_bytes:
+            import zipfile as zf_mod
+            with zf_mod.ZipFile(io.BytesIO(zip_bytes), 'r') as zin:
+                for name in zin.namelist():
+                    if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
+                        pdf_bytes = zin.read(name)
+                        if pdf_bytes:
+                            pdf_data.append((os.path.basename(name), pdf_bytes))
+            if pdf_data:
+                print(f"Parsing {len(pdf_data)} invoice PDF(s) from ZIP...")
+                invoices = parse_all_invoices(pdf_data)
+                print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
     
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -1323,12 +1326,7 @@ async def generate_waybills(
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
             zf.writestr(f"{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
-            # Include renamed invoice PDF if available
-            if invoices and pdf_data:
-                for pdf_name, pdf_bytes_raw in pdf_data:
-                    if tracking.upper() in pdf_name.upper():
-                        zf.writestr(f"{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
-                        break
+
     
     zip_buffer.seek(0)
     
@@ -1349,9 +1347,9 @@ async def generate_declarations(
     voyage_number: str = Form(""),
     date_of_departure: str = Form(""),
     carrier_name: str = Form(""),
-    pdf_files: List[UploadFile] = File(default=[]),
+    invoice_zip: Optional[UploadFile] = File(default=None),
 ):
-    """Generate ONLY Declaration XMLs from uploaded spreadsheet and optional invoice PDFs.
+    """Generate ONLY Declaration XMLs from uploaded spreadsheet and optional invoice ZIP.
     Requires manifest_reference (obtained after waybill upload to ASYCUDA)."""
     
     if not master_awb or master_awb.strip() == "":
@@ -1378,17 +1376,20 @@ async def generate_declarations(
     
     invoices = {}
     pdf_data = []
-    if pdf_files:
-        pdf_data = []
-        for pdf_file in pdf_files:
-            if pdf_file.filename and pdf_file.filename.endswith('.pdf'):
-                pdf_bytes = await pdf_file.read()
-                if pdf_bytes:
-                    pdf_data.append((pdf_file.filename, pdf_bytes))
-        if pdf_data:
-            print(f"Parsing {len(pdf_data)} invoice PDF(s)...")
-            invoices = parse_all_invoices(pdf_data)
-            print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
+    if invoice_zip and invoice_zip.filename:
+        zip_bytes = await invoice_zip.read()
+        if zip_bytes:
+            import zipfile as zf_mod
+            with zf_mod.ZipFile(io.BytesIO(zip_bytes), 'r') as zin:
+                for name in zin.namelist():
+                    if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
+                        pdf_bytes = zin.read(name)
+                        if pdf_bytes:
+                            pdf_data.append((os.path.basename(name), pdf_bytes))
+            if pdf_data:
+                print(f"Parsing {len(pdf_data)} invoice PDF(s) from ZIP...")
+                invoices = parse_all_invoices(pdf_data)
+                print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
     
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -1493,7 +1494,7 @@ async def preview_xlsx(
     date_of_departure: str = Form(""),
     carrier_name: str = Form(""),
     manifest_reference: str = Form(""),
-    pdf_files: List[UploadFile] = File(default=[]),
+    invoice_zip: Optional[UploadFile] = File(default=None),
 ):
     """Preview parsed spreadsheet data with invoice match info."""
     xlsx_bytes = await xlsx_file.read()
@@ -1504,15 +1505,18 @@ async def preview_xlsx(
     
     invoices = {}
     pdf_data = []
-    if pdf_files:
-        pdf_data = []
-        for pdf_file in pdf_files:
-            if pdf_file.filename and pdf_file.filename.endswith('.pdf'):
-                pdf_bytes = await pdf_file.read()
-                if pdf_bytes:
-                    pdf_data.append((pdf_file.filename, pdf_bytes))
-        if pdf_data:
-            invoices = parse_all_invoices(pdf_data)
+    if invoice_zip and invoice_zip.filename:
+        zip_bytes = await invoice_zip.read()
+        if zip_bytes:
+            import zipfile as zf_mod
+            with zf_mod.ZipFile(io.BytesIO(zip_bytes), 'r') as zin:
+                for name in zin.namelist():
+                    if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
+                        pdf_bytes = zin.read(name)
+                        if pdf_bytes:
+                            pdf_data.append((os.path.basename(name), pdf_bytes))
+            if pdf_data:
+                invoices = parse_all_invoices(pdf_data)
     
     preview_rows = []
     for row in rows:
