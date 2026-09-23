@@ -1240,6 +1240,7 @@ async def generate_xmls(
     }
     
     invoices = {}
+    pdf_data = []
     if pdf_files:
         pdf_data = []
         for pdf_file in pdf_files:
@@ -1376,6 +1377,7 @@ async def generate_declarations(
     }
     
     invoices = {}
+    pdf_data = []
     if pdf_files:
         pdf_data = []
         for pdf_file in pdf_files:
@@ -1501,6 +1503,7 @@ async def preview_xlsx(
         raise HTTPException(status_code=400, detail="No valid data rows found in the spreadsheet.")
     
     invoices = {}
+    pdf_data = []
     if pdf_files:
         pdf_data = []
         for pdf_file in pdf_files:
