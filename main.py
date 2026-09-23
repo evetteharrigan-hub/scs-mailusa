@@ -1865,11 +1865,12 @@ async def generate_customer_invoice(
         customs_duties=customs_duties,
     )
 
+    customer_name_clean = re.sub(r'[^A-Z0-9]', '_', customer_name.upper().strip()).strip('_')
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="SCS_Invoice_{tracking_number}.pdf"'
+            "Content-Disposition": f'attachment; filename="SCS_Invoice_{tracking_number}_{customer_name_clean}.pdf"'
         }
     )
 
@@ -1937,7 +1938,8 @@ async def generate_batch_invoices(
                 total_order_value=total_order_value,
                 customs_duties=customs_duties_val,
             )
-            zf.writestr(f"SCS_Invoice_{tracking}.pdf", pdf_bytes)
+            buyer_name_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
+            zf.writestr(f"SCS_Invoice_{tracking}_{buyer_name_clean}.pdf", pdf_bytes)
             invoice_count += 1
 
     if invoice_count == 0:
