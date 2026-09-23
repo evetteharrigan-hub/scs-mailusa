@@ -1098,6 +1098,137 @@ Customs Declarant Code: DC2114`
         }
 
 
+
+        // ─── Manifest Tab ──────────────────────────────────────────────
+        function ManifestTab() {
+            const [arrivalDate, setArrivalDate] = useState('');
+            const [manifestNumber, setManifestNumber] = useState('');
+            const [xlsxFile, setXlsxFile] = useState(null);
+            const [generating, setGenerating] = useState(false);
+            const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+            const xlsxRef = useRef(null);
+
+            const handleXlsx = useCallback((e) => {
+                e.preventDefault();
+                e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
+                const file = e.dataTransfer?.files[0] || e.target.files?.[0];
+                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                    setXlsxFile(file);
+                    setError('');
+                } else {
+                    setError('Please upload an Excel file (.xlsx)');
+                }
+            }, []);
+
+            const dragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); };
+            const dragLeave = (e) => { e.currentTarget.classList.remove('dragover'); };
+
+            const generateManifest = async () => {
+                if (!arrivalDate.trim()) { setError('Date of Arrival is required.'); return; }
+                if (!manifestNumber.trim()) { setError('Manifest Number is required.'); return; }
+                if (!xlsxFile) { setError('Please upload a spreadsheet.'); return; }
+
+                setGenerating(true);
+                setError('');
+                setSuccess('');
+
+                try {
+                    const fd = new FormData();
+                    fd.append('xlsx_file', xlsxFile);
+                    fd.append('arrival_date', arrivalDate);
+                    fd.append('manifest_number', manifestNumber);
+
+                    const res = await fetch('/generate-manifest', { method: 'POST', body: fd });
+                    if (res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const disp = res.headers.get('Content-Disposition');
+                        a.download = disp ? disp.split('filename=')[1].replace(/"/g, '') : `SCS_Manifest_${manifestNumber}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(url);
+                        setSuccess('Manifest PDF generated and downloaded successfully!');
+                    } else {
+                        const err = await res.json();
+                        setError(err.detail || 'Failed to generate manifest.');
+                    }
+                } catch (e) {
+                    setError('Failed to connect to server.');
+                }
+                setGenerating(false);
+            };
+
+            return (
+                <div className="fade-in">
+                    <div className="card-warm rounded-lg p-6">
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                            <i className="fas fa-clipboard-list text-asian-gold mr-2"></i>Manifest Details
+                        </h3>
+
+                        {error && (
+                            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                                <i className="fas fa-exclamation-circle mr-2"></i>{error}
+                                <button onClick={() => setError('')} className="ml-auto text-red-500 hover:text-red-700"><i className="fas fa-times"></i></button>
+                            </div>
+                        )}
+
+                        {success && (
+                            <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                                <i className="fas fa-check-circle mr-2"></i>{success}
+                                <button onClick={() => setSuccess('')} className="ml-auto text-green-500 hover:text-green-700"><i className="fas fa-times"></i></button>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival <span className="text-asian-crimson">*</span></label>
+                                <input type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Manifest Number <span className="text-asian-crimson">*</span></label>
+                                <input type="text" value={manifestNumber} onChange={(e) => setManifestNumber(e.target.value)}
+                                    className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., MAN-2026-001" />
+                            </div>
+                        </div>
+
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4 mt-6">
+                            <i className="fas fa-file-excel text-asian-gold mr-2"></i>Shipment Spreadsheet
+                        </h3>
+                        <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-8 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
+                            onDrop={handleXlsx} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => xlsxRef.current?.click()}>
+                            {xlsxFile ? (
+                                <div className="text-asian-maroon">
+                                    <i className="fas fa-file-excel text-4xl mb-2 text-asian-gold"></i>
+                                    <p className="font-medium">{xlsxFile.name}</p>
+                                    <p className="text-sm text-gray-500">{(xlsxFile.size / 1024).toFixed(1)} KB</p>
+                                </div>
+                            ) : (
+                                <div className="text-asian-red opacity-60">
+                                    <i className="fas fa-file-upload text-4xl mb-2"></i>
+                                    <p className="font-medium">Drop Excel file here or click to browse</p>
+                                    <p className="text-sm">Supports .xlsx files</p>
+                                </div>
+                            )}
+                        </div>
+                        <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleXlsx} />
+
+                        <div className="mt-6 flex justify-end">
+                            <button onClick={generateManifest} disabled={generating}
+                                className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i className={generating ? "fas fa-spinner fa-spin mr-2" : "fas fa-file-pdf mr-2"}></i>
+                                {generating ? 'Generating...' : 'Generate Manifest'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // ─── Login Page ────────────────────────────────────────────────
         function LoginPage({ onLogin }) {
             const [username, setUsername] = useState('');
@@ -1221,6 +1352,11 @@ Customs Declarant Code: DC2114`
                             <i className="fas fa-file-invoice mr-2"></i>Declarations
                         </button>
                         <button
+                            onClick={() => setActiveTab('manifest')}
+                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'manifest' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fas fa-clipboard-list mr-2"></i>Manifest
+                        </button>
+                        <button
                             onClick={() => setActiveTab('invoice')}
                             className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'invoice' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-receipt mr-2"></i>Customer Invoice
@@ -1233,11 +1369,13 @@ Customs Declarant Code: DC2114`
                             ? 'Step 1 of 2: Generate waybills, upload them to ASYCUDA, then proceed to Declarations.'
                             : activeTab === 'declarations'
                             ? 'Step 2 of 2: After waybills are registered in ASYCUDA, generate customs declarations here.'
+                            : activeTab === 'manifest'
+                            ? 'Generate a professional cargo manifest PDF from your shipment spreadsheet.'
                             : 'Generate a printable customs clearance invoice for your customer.'}
                     </div>
 
                     {/* Tab Content */}
-                    {activeTab === 'waybills' ? <WaybillsTab /> : activeTab === 'declarations' ? <DeclarationsTab /> : <CustomerInvoiceTab />}
+                    {activeTab === 'waybills' ? <WaybillsTab /> : activeTab === 'declarations' ? <DeclarationsTab /> : activeTab === 'manifest' ? <ManifestTab /> : <CustomerInvoiceTab />}
 
                     {/* Footer */}
                     <div className="mt-8 mb-6 text-center text-gray-400 text-sm">

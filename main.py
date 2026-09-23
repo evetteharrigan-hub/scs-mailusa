@@ -2131,5 +2131,282 @@ async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
     )
 
 
+# ─── Cargo Manifest PDF Generation ──────────────────────────────────────────────
+
+from reportlab.lib.pagesizes import landscape, A4
+from reportlab.platypus import KeepTogether
+
+
+def generate_manifest_pdf(rows: list, arrival_date: str, manifest_number: str) -> bytes:
+    """Generate a professional cargo manifest PDF (A4 landscape) and return as bytes."""
+
+    dark_maroon = HexColor("#8B0000")
+    gold = HexColor("#F39C12")
+    light_cream = HexColor("#FAF8F5")
+    table_border = HexColor("#CCCCCC")
+
+    total_packages = 0
+    total_cif = 0.0
+
+    table_rows_data = []
+    for idx, row in enumerate(rows, start=1):
+        tracking = safe_str(row.get("tracking_number", "")).strip()
+        consignee = safe_str(row.get("buyer_name", "")).strip()
+
+        raw_desc = safe_str(row.get("items_description", ""))
+        desc_clean = re.sub(r'[\[\]]', '', raw_desc).strip()
+        if len(desc_clean) > 60:
+            desc_clean = desc_clean[:57] + "..."
+
+        items_col = safe_str(row.get("items", "")).strip()
+        try:
+            pkgs = int(float(items_col)) if items_col else 1
+        except (ValueError, TypeError):
+            pkgs = 1
+
+        cif_col = safe_str(row.get("cif_verified", "")).strip()
+        try:
+            cif_val = float(cif_col) if cif_col else 0.0
+        except (ValueError, TypeError):
+            cif_val = 0.0
+
+        total_packages += pkgs
+        total_cif += cif_val
+
+        table_rows_data.append({
+            "num": idx,
+            "tracking": tracking,
+            "consignee": consignee,
+            "description": desc_clean,
+            "pkgs": pkgs,
+            "cif": cif_val,
+        })
+
+    buffer = io.BytesIO()
+
+    page_w, page_h = landscape(A4)
+
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+    styles = getSampleStyleSheet()
+
+    style_company = ParagraphStyle(
+        'ManifestCompany', parent=styles['Normal'],
+        fontSize=18, fontName='Helvetica-Bold', textColor=dark_maroon,
+        alignment=TA_CENTER, spaceAfter=1,
+    )
+    style_address = ParagraphStyle(
+        'ManifestAddress', parent=styles['Normal'],
+        fontSize=9, textColor=grey, alignment=TA_CENTER, spaceAfter=2,
+    )
+    style_title = ParagraphStyle(
+        'ManifestTitle', parent=styles['Normal'],
+        fontSize=16, fontName='Helvetica-Bold', textColor=dark_maroon,
+        alignment=TA_CENTER, spaceAfter=6, spaceBefore=4,
+    )
+    style_info = ParagraphStyle(
+        'ManifestInfo', parent=styles['Normal'],
+        fontSize=10, leading=13,
+    )
+    style_info_bold = ParagraphStyle(
+        'ManifestInfoBold', parent=styles['Normal'],
+        fontSize=10, fontName='Helvetica-Bold', leading=13,
+    )
+    style_cell = ParagraphStyle(
+        'ManifestCell', parent=styles['Normal'],
+        fontSize=8, leading=10,
+    )
+    style_cell_bold = ParagraphStyle(
+        'ManifestCellBold', parent=styles['Normal'],
+        fontSize=8, fontName='Helvetica-Bold', leading=10,
+    )
+    style_cell_right = ParagraphStyle(
+        'ManifestCellRight', parent=styles['Normal'],
+        fontSize=8, leading=10, alignment=TA_RIGHT,
+    )
+    style_cell_right_bold = ParagraphStyle(
+        'ManifestCellRightBold', parent=styles['Normal'],
+        fontSize=8, fontName='Helvetica-Bold', leading=10, alignment=TA_RIGHT,
+    )
+    style_cell_center = ParagraphStyle(
+        'ManifestCellCenter', parent=styles['Normal'],
+        fontSize=8, leading=10, alignment=TA_CENTER,
+    )
+    style_cell_center_bold = ParagraphStyle(
+        'ManifestCellCenterBold', parent=styles['Normal'],
+        fontSize=8, fontName='Helvetica-Bold', leading=10, alignment=TA_CENTER,
+    )
+    style_footer = ParagraphStyle(
+        'ManifestFooter', parent=styles['Normal'],
+        fontSize=8, textColor=grey, alignment=TA_CENTER,
+    )
+
+    def footer_func(canvas, doc):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(grey)
+        canvas.drawCentredString(page_w / 2, 18 * mm,
+                                 "Prepared by: Safe Cargo Services \u2014 Customs Declarant DC2114")
+        canvas.drawRightString(page_w - 20 * mm, 18 * mm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=15 * mm,
+        bottomMargin=25 * mm,
+    )
+
+    elements = []
+
+    # Header
+    elements.append(Paragraph("SAFE CARGO SERVICES", style_company))
+    elements.append(Paragraph("Sandy Ground, Anguilla  |  Tel: (264) 498-0194", style_address))
+    elements.append(HRFlowable(
+        width="100%", thickness=2, color=gold,
+        spaceBefore=2, spaceAfter=2,
+    ))
+    elements.append(Paragraph("CARGO MANIFEST", style_title))
+
+    # Info row (two columns)
+    info_data = [[
+        Paragraph(
+            f"<b>Date of Arrival:</b> {arrival_date}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+            f"<b>Manifest No:</b> {manifest_number}",
+            style_info,
+        ),
+        Paragraph(
+            f"<b>Total Packages:</b> {total_packages}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
+            f"<b>Total CIF:</b> US$ {total_cif:,.2f}",
+            style_info,
+        ),
+    ]]
+    info_tbl = Table(info_data, colWidths=[(page_w - 40 * mm) * 0.5, (page_w - 40 * mm) * 0.5])
+    info_tbl.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    elements.append(info_tbl)
+    elements.append(Spacer(1, 4 * mm))
+
+    # Table header
+    col_widths = [25, 130, 120, 180, 40, 70]
+    header_style_white = ParagraphStyle(
+        'ManifestHeaderWhite', parent=styles['Normal'],
+        fontSize=9, fontName='Helvetica-Bold', textColor=white, leading=11,
+    )
+    header_style_white_center = ParagraphStyle(
+        'ManifestHeaderWhiteCenter', parent=styles['Normal'],
+        fontSize=9, fontName='Helvetica-Bold', textColor=white, leading=11,
+        alignment=TA_CENTER,
+    )
+    header_style_white_right = ParagraphStyle(
+        'ManifestHeaderWhiteRight', parent=styles['Normal'],
+        fontSize=9, fontName='Helvetica-Bold', textColor=white, leading=11,
+        alignment=TA_RIGHT,
+    )
+
+    tbl_data = [[
+        Paragraph("#", header_style_white_center),
+        Paragraph("Tracking Number", header_style_white),
+        Paragraph("Consignee Name", header_style_white),
+        Paragraph("Description", header_style_white),
+        Paragraph("Pkgs", header_style_white_center),
+        Paragraph("CIF Value (US$)", header_style_white_right),
+    ]]
+
+    # Data rows
+    for r in table_rows_data:
+        tbl_data.append([
+            Paragraph(str(r["num"]), style_cell_center),
+            Paragraph(r["tracking"], style_cell),
+            Paragraph(r["consignee"], style_cell),
+            Paragraph(r["description"], style_cell),
+            Paragraph(str(r["pkgs"]), style_cell_center),
+            Paragraph(f'{r["cif"]:,.2f}', style_cell_right),
+        ])
+
+    # Totals row
+    tbl_data.append([
+        Paragraph("", style_cell_bold),
+        Paragraph("", style_cell_bold),
+        Paragraph("", style_cell_bold),
+        Paragraph("<b>TOTAL</b>", style_cell_bold),
+        Paragraph(f"<b>{total_packages}</b>", style_cell_center_bold),
+        Paragraph(f'<b>{total_cif:,.2f}</b>', style_cell_right_bold),
+    ])
+
+    tbl = Table(tbl_data, colWidths=col_widths, repeatRows=1)
+
+    # Build table style commands
+    tbl_style_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), dark_maroon),
+        ('TEXTCOLOR', (0, 0), (-1, 0), white),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('GRID', (0, 0), (-1, -1), 0.5, table_border),
+        # Totals row styling
+        ('LINEABOVE', (0, -1), (-1, -1), 1.5, dark_maroon),
+        ('BACKGROUND', (0, -1), (-1, -1), HexColor("#FDF2E9")),
+    ]
+
+    # Alternating row colors for data rows (rows 1 to n-1, excluding header and totals)
+    for i in range(1, len(tbl_data) - 1):
+        if i % 2 == 0:
+            tbl_style_cmds.append(('BACKGROUND', (0, i), (-1, i), light_cream))
+
+    tbl.setStyle(TableStyle(tbl_style_cmds))
+    elements.append(tbl)
+
+    doc.build(elements, onFirstPage=footer_func, onLaterPages=footer_func)
+    buffer.seek(0)
+    return buffer.read()
+
+
+@app.post("/generate-manifest")
+async def generate_manifest(
+    xlsx_file: UploadFile = File(...),
+    arrival_date: str = Form(...),
+    manifest_number: str = Form(...),
+):
+    """Generate a Cargo Manifest PDF from the uploaded spreadsheet."""
+    if not arrival_date or not arrival_date.strip():
+        raise HTTPException(status_code=400, detail="Date of Arrival is required.")
+    if not manifest_number or not manifest_number.strip():
+        raise HTTPException(status_code=400, detail="Manifest Number is required.")
+
+    xlsx_bytes = await xlsx_file.read()
+    rows = parse_xlsx(xlsx_bytes)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid data rows found in the spreadsheet.")
+
+    pdf_bytes = generate_manifest_pdf(rows, arrival_date.strip(), manifest_number.strip())
+
+    manifest_num_clean = re.sub(r'[^A-Z0-9]', '_', manifest_number.strip().upper()).strip('_')
+    filename = f"SCS_Manifest_{manifest_num_clean}.pdf"
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+
 # Mount static files LAST so API routes take priority
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
