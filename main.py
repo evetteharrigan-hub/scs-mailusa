@@ -483,7 +483,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
     except Exception:
         formatted_date = raw_date
     
-    prev_doc_ref = f"{voyage}-{row_index}"
+    prev_doc_ref = master_awb
     
     items_desc = parse_bracketed_array(safe_str(row_data.get("items_description", "")))
     # Use Items column as package count — it represents the number of packages in the shipment
@@ -512,7 +512,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Identification_segment>',
         f'<Voyage_number>{voyage}</Voyage_number>',
         f'<Date_of_departure>{formatted_date}</Date_of_departure>',
-        f'<Bol_reference>{master_awb}</Bol_reference>',
+        f'<Bol_reference>{safe_str(row_data.get("tracking_number", "")).upper()}</Bol_reference>',
         '<Customs_office_segment>',
         '<Code>00RB</Code>',
         '<Name>ROAD BAY</Name>',
