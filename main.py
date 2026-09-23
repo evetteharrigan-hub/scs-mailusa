@@ -1983,5 +1983,153 @@ async def generate_batch_invoices(
         }
     )
 
+
+# ─── PDF Waybill Splitter ────────────────────────────────────────────────────────
+
+import pymupdf as fitz  # PyMuPDF
+
+
+def _extract_tracking_from_page(text: str) -> str:
+    """Extract tracking number from waybill page text using multiple patterns."""
+    if not text:
+        return ""
+
+    # Pattern 1: Known tracking formats
+    known_patterns = [
+        r'(RR\d{9,}[A-Z]{2})',          # RR + digits + country code
+        r'(MLBS\d{6,}[A-Z]*)',           # MLBS format
+        r'(CC\d{6,})',                    # CC format
+        r'([A-Z]{2}\d{9}[A-Z]{2})',      # Standard postal (EE123456789US)
+    ]
+    for pat in known_patterns:
+        match = re.search(pat, text, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+
+    # Pattern 2: Look near tracking keywords
+    tracking_keywords = [
+        r'(?:Tracking\s*(?:Number|No|#)|AWB|Waybill\s*No|B/L|Reference|Air\s*Waybill|Tracking)[:\s#]+([A-Z0-9]{6,})',
+        r'(?:Tracking\s*(?:Number|No|#)|AWB|Waybill\s*No|B/L|Reference|Tracking)[:\s#]+([A-Z]{2,4}\d{6,}[A-Z0-9]*)',
+    ]
+    for pat in tracking_keywords:
+        match = re.search(pat, text, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+
+    # Pattern 3: Generic alphanumeric codes that look like tracking numbers
+    generic_patterns = [
+        r'([A-Z]{2,4}\d{8,}[A-Z0-9]*)',  # 2-4 letters + 8+ digits
+        r'(\d{10,})',                       # 10+ digits standalone
+    ]
+    for pat in generic_patterns:
+        match = re.search(pat, text)
+        if match:
+            return match.group(1).upper()
+
+    return ""
+
+
+def _extract_consignee_from_page(text: str) -> str:
+    """Extract consignee name from waybill page text."""
+    if not text:
+        return ""
+
+    consignee_patterns = [
+        r'(?:Consignee|To:|Deliver\s*To|Recipient|Ship\s*To|Delivered\s*To)[:\s]*([A-Za-z][A-Za-z\s.\-\']{2,50})',
+    ]
+    for pat in consignee_patterns:
+        match = re.search(pat, text, re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            name = name.split("\n")[0].strip()
+            if len(name) >= 2:
+                return name
+
+    # Fallback: look for keyword on a line, take the next non-empty line
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        line_lower = line.strip().lower()
+        if any(kw in line_lower for kw in ['consignee', 'deliver to', 'recipient', 'ship to']):
+            for pat in consignee_patterns:
+                match = re.search(pat, line, re.IGNORECASE)
+                if match:
+                    return match.group(1).strip()
+            for j in range(i + 1, min(i + 4, len(lines))):
+                next_line = lines[j].strip()
+                if next_line and len(next_line) >= 2 and re.match(r'[A-Za-z]', next_line):
+                    return next_line[:50]
+
+    return ""
+
+
+def _clean_name_for_file(name: str) -> str:
+    """Clean a name for use in filename: uppercase, spaces to underscores, no special chars."""
+    if not name:
+        return ""
+    name = name.upper().strip()
+    name = re.sub(r'[^A-Z0-9\s]', '', name)
+    name = re.sub(r'\s+', '_', name)
+    return name.strip('_')
+
+
+@app.post("/split-waybills-pdf")
+async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
+    """Split a multi-page waybill PDF into individual pages, named by tracking number and consignee."""
+    pdf_bytes = await waybill_pdf.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF file uploaded.")
+
+    try:
+        src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not open PDF: {e}")
+
+    page_count = len(src_doc)
+    if page_count == 0:
+        src_doc.close()
+        raise HTTPException(status_code=400, detail="PDF contains no pages.")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for page_num in range(page_count):
+            page = src_doc[page_num]
+            text = page.get_text("text") or ""
+
+            tracking = _extract_tracking_from_page(text)
+            consignee = _extract_consignee_from_page(text)
+            consignee_clean = _clean_name_for_file(consignee)
+
+            if tracking:
+                if consignee_clean:
+                    filename = f"{tracking}_{consignee_clean}_waybill.pdf"
+                else:
+                    filename = f"{tracking}_waybill.pdf"
+            else:
+                if consignee_clean:
+                    filename = f"page_{page_num + 1}_{consignee_clean}_waybill.pdf"
+                else:
+                    filename = f"page_{page_num + 1}_waybill.pdf"
+
+            # Create single-page PDF
+            out_doc = fitz.open()
+            out_doc.insert_pdf(src_doc, from_page=page_num, to_page=page_num)
+            page_pdf_bytes = out_doc.tobytes()
+            out_doc.close()
+
+            zf.writestr(filename, page_pdf_bytes)
+
+    src_doc.close()
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="split_waybills.zip"',
+            "X-Page-Count": str(page_count),
+        }
+    )
+
+
 # Mount static files LAST so API routes take priority
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -113,6 +113,13 @@
             const [error, setError] = useState('');
             const xlsxRef = useRef(null);
 
+            // PDF Splitter state
+            const [splitterPdf, setSplitterPdf] = useState(null);
+            const [splitting, setSplitting] = useState(false);
+            const [splitSuccess, setSplitSuccess] = useState('');
+            const [splitError, setSplitError] = useState('');
+            const splitterRef = useRef(null);
+
             const handleChange = (field, value) => setInfo(prev => ({ ...prev, [field]: value }));
 
             const handleXlsx = useCallback((e) => {
@@ -324,6 +331,103 @@
                             </div>
                         </div>
                     )}
+                    {/* ─── PDF WAYBILL SPLITTER ─── */}
+                    <div className="mt-8 card-warm rounded-lg p-6">
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
+                            <i className="fas fa-cut text-asian-gold mr-2"></i>PDF WAYBILL SPLITTER
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-4">Upload a multi-page PDF — each page will be split and named by tracking number and consignee</p>
+
+                        {splitError && (
+                            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                                <i className="fas fa-exclamation-circle mr-2"></i>{splitError}
+                                <button onClick={() => setSplitError('')} className="ml-auto text-red-500 hover:text-red-700"><i className="fas fa-times"></i></button>
+                            </div>
+                        )}
+
+                        {splitSuccess && (
+                            <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center text-sm">
+                                <i className="fas fa-check-circle mr-2"></i>{splitSuccess}
+                                <button onClick={() => setSplitSuccess('')} className="ml-auto text-green-500 hover:text-green-700"><i className="fas fa-times"></i></button>
+                            </div>
+                        )}
+
+                        <div
+                            className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-8 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                e.currentTarget.classList.remove('dragover');
+                                const file = e.dataTransfer?.files[0];
+                                if (file && file.name.toLowerCase().endsWith('.pdf')) {
+                                    setSplitterPdf(file);
+                                    setSplitError('');
+                                    setSplitSuccess('');
+                                } else {
+                                    setSplitError('Please upload a PDF file');
+                                }
+                            }}
+                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('dragover'); }}
+                            onDragLeave={(e) => { e.currentTarget.classList.remove('dragover'); }}
+                            onClick={() => splitterRef.current?.click()}
+                        >
+                            {splitterPdf ? (
+                                <div className="text-asian-maroon">
+                                    <i className="fas fa-file-pdf text-4xl mb-2 text-asian-gold"></i>
+                                    <p className="font-medium">{splitterPdf.name}</p>
+                                    <p className="text-sm text-gray-500">{(splitterPdf.size / 1024).toFixed(1)} KB</p>
+                                </div>
+                            ) : (
+                                <div className="text-asian-red opacity-60">
+                                    <i className="fas fa-file-pdf text-4xl mb-2"></i>
+                                    <p className="font-medium">Upload Batch Waybill PDF</p>
+                                    <p className="text-sm">Drop PDF here or click to browse</p>
+                                </div>
+                            )}
+                        </div>
+                        <input ref={splitterRef} type="file" accept=".pdf" className="hidden" onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && file.name.toLowerCase().endsWith('.pdf')) {
+                                setSplitterPdf(file);
+                                setSplitError('');
+                                setSplitSuccess('');
+                            }
+                        }} />
+
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                onClick={async () => {
+                                    if (!splitterPdf) { setSplitError('Please upload a PDF file first'); return; }
+                                    setSplitting(true); setSplitError(''); setSplitSuccess('');
+                                    const fd = new FormData();
+                                    fd.append('waybill_pdf', splitterPdf);
+                                    try {
+                                        const res = await fetch('/split-waybills-pdf', { method: 'POST', body: fd });
+                                        if (res.ok) {
+                                            const pageCount = res.headers.get('X-Page-Count') || '?';
+                                            const blob = await res.blob();
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'split_waybills.zip';
+                                            document.body.appendChild(a); a.click(); a.remove();
+                                            window.URL.revokeObjectURL(url);
+                                            setSplitSuccess(`Successfully split PDF into ${pageCount} individual waybill pages`);
+                                        } else {
+                                            const err = await res.json().catch(() => ({}));
+                                            setSplitError(err.detail || 'Failed to split PDF');
+                                        }
+                                    } catch (e) {
+                                        setSplitError('Failed to connect to server.');
+                                    }
+                                    setSplitting(false);
+                                }}
+                                disabled={splitting || !splitterPdf}
+                                className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center disabled:opacity-50 transition-colors"
+                            >
+                                {splitting ? <><i className="fas fa-spinner fa-spin mr-2"></i>Splitting...</> : <><i className="fas fa-cut mr-2"></i>Split &amp; Download</>}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             );
         }
