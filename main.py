@@ -1261,10 +1261,11 @@ async def generate_xmls(
                 print(f"  Row {idx} ({tracking}): matched invoice with {len(matched_invoice.items)} items")
             
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
-            zf.writestr(f"waybills/{tracking}_waybill.xml", waybill_xml)
+            buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
+            zf.writestr(f"waybills/{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
             
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
-            zf.writestr(f"declarations/{tracking}_declaration.xml", declaration_xml)
+            zf.writestr(f"declarations/{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
     
     zip_buffer.seek(0)
     
@@ -1312,7 +1313,8 @@ async def generate_waybills(
         for idx, row in enumerate(rows, start=1):
             tracking = safe_str(row.get("tracking_number", f"ROW_{idx}"))
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
-            zf.writestr(f"{tracking}_waybill.xml", waybill_xml)
+            buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
+            zf.writestr(f"{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
     
     zip_buffer.seek(0)
     
@@ -1382,7 +1384,8 @@ async def generate_declarations(
                 print(f"  Row {idx} ({tracking}): matched invoice with {len(matched_invoice.items)} items")
             
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
-            zf.writestr(f"{tracking}_declaration.xml", declaration_xml)
+            buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
+            zf.writestr(f"{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
     
     zip_buffer.seek(0)
     
