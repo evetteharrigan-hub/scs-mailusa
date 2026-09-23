@@ -591,7 +591,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Name>US Dollar</Name>',
         '</Currency>',
         '<Indicator_segment>',
-        '<Code>PP</Code>',
+        '<Code>100000</Code>',
         '<Name>FREIGHT PREPAID</Name>',
         '</Indicator_segment>',
         '</Freight_segment>',
