@@ -1266,6 +1266,13 @@ async def generate_xmls(
             
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
             zf.writestr(f"declarations/{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
+            
+            # Include renamed invoice PDF if available
+            if matched_invoice and pdf_data:
+                for pdf_name, pdf_bytes_raw in pdf_data:
+                    if tracking.upper() in pdf_name.upper():
+                        zf.writestr(f"invoices/{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
+                        break
     
     zip_buffer.seek(0)
     
@@ -1315,6 +1322,12 @@ async def generate_waybills(
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
             zf.writestr(f"{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
+            # Include renamed invoice PDF if available
+            if invoices and pdf_data:
+                for pdf_name, pdf_bytes_raw in pdf_data:
+                    if tracking.upper() in pdf_name.upper():
+                        zf.writestr(f"{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
+                        break
     
     zip_buffer.seek(0)
     
@@ -1386,6 +1399,12 @@ async def generate_declarations(
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
             zf.writestr(f"{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
+            # Include renamed invoice PDF if available
+            if matched_invoice and pdf_data:
+                for pdf_name, pdf_bytes_raw in pdf_data:
+                    if tracking.upper() in pdf_name.upper():
+                        zf.writestr(f"{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
+                        break
     
     zip_buffer.seek(0)
     
