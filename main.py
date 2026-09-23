@@ -703,7 +703,12 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     tracking = safe_str(row_data.get("tracking_number", "")).strip().upper()
     buyer_name = safe_str(row_data.get("buyer_name", "")).strip().upper()
     shipper = safe_str(row_data.get("shipper", "")).strip().upper()
-    shipper_country = safe_str(row_data.get("shipper_country", "US")).strip().upper()
+    shipper_country_code = safe_str(row_data.get("shipper_country", "US")).strip().upper()
+    country_names = {"CN": "CHINA", "US": "UNITED STATES", "GB": "UNITED KINGDOM", "CA": "CANADA",
+                     "MX": "MEXICO", "DE": "GERMANY", "FR": "FRANCE", "IT": "ITALY", "JP": "JAPAN",
+                     "KR": "SOUTH KOREA", "HK": "HONG KONG", "TW": "TAIWAN", "IN": "INDIA",
+                     "AU": "AUSTRALIA", "BR": "BRAZIL", "AE": "UNITED ARAB EMIRATES"}
+    shipper_country = country_names.get(shipper_country_code, shipper_country_code)
     ddp_ddu = safe_str(row_data.get("ddp_ddu", "")).strip().upper()
     if not ddp_ddu:
         ddp_ddu = "FOB"
