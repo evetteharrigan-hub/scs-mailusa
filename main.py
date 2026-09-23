@@ -512,7 +512,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Identification_segment>',
         f'<Voyage_number>{voyage}</Voyage_number>',
         f'<Date_of_departure>{formatted_date}</Date_of_departure>',
-        f'<Bol_reference>{safe_str(row_data.get("tracking_number", "")).upper()}</Bol_reference>',
+        f'<Bol_reference>{master_awb}</Bol_reference>',
         '<Customs_office_segment>',
         '<Code>00RB</Code>',
         '<Name>ROAD BAY</Name>',
