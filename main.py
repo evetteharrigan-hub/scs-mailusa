@@ -835,7 +835,11 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     x.append('<Traders>')
     x.append('<Exporter>')
     x.append('<Exporter_code><null/></Exporter_code>')
-    x.append(f'<Exporter_name>{shipper}\\n{shipper_country}</Exporter_name>')
+    shipper_addr1_val = safe_str(row_data.get('shipper_address1', '')).strip().upper()
+    shipper_city_val = safe_str(row_data.get('shipper_city', '')).strip().upper()
+    shipper_state_val = safe_str(row_data.get('shipper_state', '')).strip().upper()
+    exp_lines = [l for l in [shipper, shipper_addr1_val, (shipper_city_val + ' ' + shipper_state_val).strip(), shipper_country] if l]
+    x.append('<Exporter_name>' + '\n'.join(exp_lines) + '</Exporter_name>')
     x.append('</Exporter>')
     x.append('<Consignee>')
     x.append('<Consignee_code>999</Consignee_code>')
