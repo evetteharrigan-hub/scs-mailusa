@@ -531,7 +531,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Total_number_of_containers>0</Total_number_of_containers>',
         '<Total_number_of_vehicles>0</Total_number_of_vehicles>',
         f'<Total_gross_mass_manifested>{safe_str(row_data.get("weight","0"))}</Total_gross_mass_manifested>',
-        f'<Volume_in_cubic_meters>{safe_str(row_data.get("volume","0.2"))}</Volume_in_cubic_meters>',
+        '<Volume_in_cubic_meters>0.02</Volume_in_cubic_meters>',
         '<Number_of_sub_bols/>',
         '<Bol_type_segment>',
         '<Code>710</Code>',
