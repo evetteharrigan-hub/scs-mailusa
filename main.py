@@ -2041,35 +2041,45 @@ def _extract_tracking_from_page(text: str) -> str:
 
 
 def _extract_consignee_from_page(text: str) -> str:
-    """Extract consignee name from waybill page text."""
+    """Extract consignee name from ASYCUDA waybill page text.
+    
+    ASYCUDA waybill PDF layout (top section, in order):
+      Line 1: ASYCUDAWorld Bill Of Lading
+      Line 2: Cargo Reporter name (e.g. MR.Ray Blues and Blues)
+      Line 3: Exporter/Shipper name (e.g. SHEIN)
+      Line 4: Consignee name  <-- this is what we want
+      Line 5: Notify party (usually NULL)
+    """
     if not text:
         return ""
-
-    consignee_patterns = [
-        r'(?:Consignee|To:|Deliver\s*To|Recipient|Ship\s*To|Delivered\s*To)[:\s]*([A-Za-z][A-Za-z\s.\-\']{2,50})',
-    ]
-    for pat in consignee_patterns:
-        match = re.search(pat, text, re.IGNORECASE)
-        if match:
-            name = match.group(1).strip()
-            name = name.split("\n")[0].strip()
-            if len(name) >= 2:
-                return name
-
-    # Fallback: look for keyword on a line, take the next non-empty line
-    lines = text.split("\n")
+    
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    
+    # Primary method: find "ASYCUDAWorld Bill Of Lading" header
+    # then skip 2 lines (cargo reporter + exporter) to get consignee
+    skip_keywords = {'null', 'qty', '0', '0.0', 'package', 'pk', 'kg', 'cbm'}
     for i, line in enumerate(lines):
-        line_lower = line.strip().lower()
-        if any(kw in line_lower for kw in ['consignee', 'deliver to', 'recipient', 'ship to']):
-            for pat in consignee_patterns:
-                match = re.search(pat, line, re.IGNORECASE)
-                if match:
-                    return match.group(1).strip()
-            for j in range(i + 1, min(i + 4, len(lines))):
-                next_line = lines[j].strip()
-                if next_line and len(next_line) >= 2 and re.match(r'[A-Za-z]', next_line):
-                    return next_line[:50]
-
+        if 'asycudaworld bill of lading' in line.lower():
+            # Lines after header: cargo_reporter, exporter, consignee
+            candidates = []
+            for j in range(i + 1, min(i + 8, len(lines))):
+                val = lines[j].strip()
+                if val and val.lower() not in skip_keywords and not val.isdigit() and re.match(r'[A-Za-z]', val):
+                    candidates.append(val)
+                if len(candidates) == 3:
+                    break
+            if len(candidates) >= 3:
+                return candidates[2]  # 3rd = consignee (after cargo reporter + exporter)
+            elif len(candidates) == 2:
+                return candidates[1]  # fallback: 2nd entry
+    
+    # Fallback: find line just before "NULL" (notify party)
+    for i, line in enumerate(lines):
+        if line.strip().upper() == 'NULL' and i > 0:
+            prev = lines[i - 1].strip()
+            if prev and len(prev) >= 2 and re.match(r'[A-Za-z]', prev) and prev.lower() not in skip_keywords:
+                return prev[:50]
+    
     return ""
 
 
