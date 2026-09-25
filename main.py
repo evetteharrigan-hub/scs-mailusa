@@ -2194,11 +2194,7 @@ def generate_manifest_pdf(rows: list, arrival_date: str, manifest_number: str) -
         if len(desc_clean) > 60:
             desc_clean = desc_clean[:57] + "..."
 
-        items_col = safe_str(row.get("items", "")).strip()
-        try:
-            pkgs = int(float(items_col)) if items_col else 1
-        except (ValueError, TypeError):
-            pkgs = 1
+        pkgs = 1  # Each tracking number = 1 package
 
         cif_col = safe_str(row.get("cif_verified", "")).strip()
         try:
