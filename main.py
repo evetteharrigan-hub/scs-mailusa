@@ -2116,20 +2116,35 @@ async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
             page = src_doc[page_num]
             text = page.get_text("text") or ""
 
-            tracking = _extract_tracking_from_page(text)
-            consignee = _extract_consignee_from_page(text)
-            consignee_clean = _clean_name_for_file(consignee)
+            # Auto-detect: invoice or waybill
+            is_invoice = "Bill To" in text and "Tracking Number" in text
 
-            if tracking:
-                if consignee_clean:
-                    filename = f"{tracking}_{consignee_clean}_waybill.pdf"
+            if is_invoice:
+                # Extract Bill To name and tracking from SHEIN invoice
+                bill_to = ""
+                tracking = ""
+                lines = [l.strip() for l in text.split("\n") if l.strip()]
+                for i, line in enumerate(lines):
+                    if line == "Bill To" and i + 1 < len(lines):
+                        bill_to = lines[i + 1].strip()
+                    if line == "Tracking Number" and i + 1 < len(lines):
+                        tracking = lines[i + 1].strip()
+                name_clean = _clean_name_for_file(bill_to)
+                if tracking and name_clean:
+                    filename = f"{tracking}_{name_clean}_invoice.pdf"
+                elif tracking:
+                    filename = f"{tracking}_invoice.pdf"
                 else:
-                    filename = f"{tracking}_waybill.pdf"
+                    filename = f"page_{page_num + 1}_invoice.pdf"
             else:
-                if consignee_clean:
-                    filename = f"page_{page_num + 1}_{consignee_clean}_waybill.pdf"
+                # Waybill
+                tracking = _extract_tracking_from_page(text)
+                consignee = _extract_consignee_from_page(text)
+                consignee_clean = _clean_name_for_file(consignee)
+                if tracking:
+                    filename = f"{tracking}_{consignee_clean}_waybill.pdf" if consignee_clean else f"{tracking}_waybill.pdf"
                 else:
-                    filename = f"page_{page_num + 1}_waybill.pdf"
+                    filename = f"page_{page_num + 1}_{consignee_clean}_waybill.pdf" if consignee_clean else f"page_{page_num + 1}_waybill.pdf"
 
             # Create single-page PDF
             out_doc = fitz.open()
