@@ -336,7 +336,7 @@
                         <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
                             <i className="fas fa-cut text-asian-gold mr-2"></i>PDF WAYBILL SPLITTER
                         </h3>
-                        <p className="text-sm text-gray-500 mb-4">Upload a multi-page PDF — each page will be split and named by tracking number and consignee</p>
+                        <p className="text-sm text-gray-500 mb-4">Upload a multi-page PDF — waybills named by tracking + consignee, invoices named by tracking + Bill To name</p>
 
                         {splitError && (
                             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
@@ -379,7 +379,7 @@
                             ) : (
                                 <div className="text-asian-red opacity-60">
                                     <i className="fas fa-file-pdf text-4xl mb-2"></i>
-                                    <p className="font-medium">Upload Batch Waybill PDF</p>
+                                    <p className="font-medium">Upload Batch Waybill or Invoice PDF</p>
                                     <p className="text-sm">Drop PDF here or click to browse</p>
                                 </div>
                             )}
