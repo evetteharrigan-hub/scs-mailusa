@@ -761,7 +761,7 @@
                     )}
 
                     {/* Step 3 — Customer Invoices (appears after declarations generated) */}
-                    {declarationsGenerated && step === 3 && (
+                    {(declarationsGenerated || showStep3) && (step === 3 || showStep3) && (
                         <div className="card-warm rounded-lg p-6 mt-6 fade-in">
                             <h3 className="section-header text-lg font-semibold text-asian-maroon mb-2">
                                 <i className="fas fa-file-invoice-dollar text-asian-gold mr-2"></i>STEP 3 — CUSTOMER INVOICES
@@ -1362,6 +1362,8 @@ Customs Declarant Code: DC2114`
             const [waybillForm, setWaybillForm] = useState({ master_awb: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [decForm, setDecForm] = useState({ master_awb: '', manifest_reference: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [history, setHistory] = useState([]);
+            const [restoredCustomers, setRestoredCustomers] = useState([]);
+            const [showStep3, setShowStep3] = useState(false);
 
             const loadFromLocalStorage = () => {
                 try {
