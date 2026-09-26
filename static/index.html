@@ -530,6 +530,7 @@
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
                         setDeclarationsGenerated(true);
+                        setStep(3);
                         onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length);
                     } else {
                         const err = await res.json();
