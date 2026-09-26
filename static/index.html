@@ -442,6 +442,9 @@
             const [restoredCustomers, setRestoredCustomers] = useState([]);
             React.useEffect(() => { if (restoredData && restoredData.length > 0) { setRestoredCustomers(restoredData); setShowStep3(true); setStep(3); if (onRestoredDataUsed) onRestoredDataUsed(); } }, [restoredData]);
             const [dutiesMap, setDutiesMap] = useState({});
+            const [paymentOrderSuccess, setPaymentOrderSuccess] = useState('');
+            const [uploadingPaymentOrder, setUploadingPaymentOrder] = useState(false);
+            const invoiceRows = parsedRows.length ? parsedRows : restoredCustomers;
             const [arrivalDate, setArrivalDate] = useState('');
             const [generatingInvoices, setGeneratingInvoices] = useState(false);
             const xlsxRef = useRef(null);
@@ -543,6 +546,47 @@
             };
             const handleDutyChange = (tracking, value) => {
                 setDutiesMap(prev => ({ ...prev, [tracking]: value }));
+            };
+
+            const uploadPaymentOrder = async (file) => {
+                setPaymentOrderSuccess('');
+                if (!file.name.toLowerCase().endsWith('.pdf')) {
+                    setError('Please upload a PDF payment order.');
+                    return;
+                }
+                setUploadingPaymentOrder(true);
+                setError('');
+                const fd = new FormData();
+                fd.append('pdf_file', file);
+                try {
+                    const res = await fetch('/parse-payment-order', { method: 'POST', body: fd });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        setError(err.detail || 'Failed to parse payment order.');
+                    } else {
+                        const matches = await res.json();
+                        const updates = {};
+                        for (const match of matches) {
+                            if (!match.digits || !Number.isFinite(Number(match.amount_ec))) continue;
+                            for (const row of invoiceRows) {
+                                const tracking = row.tracking_number;
+                                if (tracking && String(tracking).includes(String(match.digits))) {
+                                    updates[tracking] = match.amount_ec;
+                                }
+                            }
+                        }
+                        const count = Object.keys(updates).length;
+                        if (count) {
+                            setDutiesMap(prev => ({ ...prev, ...updates }));
+                            setPaymentOrderSuccess(`✓ ${count} duties auto-filled from payment order`);
+                        } else {
+                            setError('No payment order references matched customer tracking numbers.');
+                        }
+                    }
+                } catch (e) {
+                    setError('Failed to connect to server.');
+                }
+                setUploadingPaymentOrder(false);
             };
 
             const generateBatchInvoices = async () => {
@@ -772,6 +816,21 @@
                             </h3>
                             <p className="text-sm text-gray-500 mb-4">Enter customs duties for each customer to generate their invoices.</p>
 
+                            <div className="mb-4">
+                                <label htmlFor="payment-order-pdf" className="block text-sm font-medium text-asian-charcoal mb-2">
+                                    Upload ASYCUDA Payment Order PDF to auto-fill duties
+                                </label>
+                                <input id="payment-order-pdf" type="file" accept=".pdf" disabled={uploadingPaymentOrder}
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) uploadPaymentOrder(file);
+                                        e.target.value = '';
+                                    }}
+                                    className="block w-full text-sm text-asian-charcoal file:mr-3 file:rounded-lg file:border-0 file:bg-asian-maroon file:px-4 file:py-2 file:font-medium file:text-asian-gold disabled:opacity-50" />
+                                {uploadingPaymentOrder && <p className="mt-2 text-sm text-gray-500">Parsing payment order...</p>}
+                                {paymentOrderSuccess && <p role="status" className="mt-2 text-sm text-green-700">{paymentOrderSuccess}</p>}
+                            </div>
+
                             <div className="overflow-x-auto border border-asian-gold-dark/20 rounded-lg max-h-72 overflow-y-auto mb-4">
                                 <table className="w-full text-sm">
                                     <thead className="table-header-red sticky top-0">
@@ -782,7 +841,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {parsedRows.map((row, i) => (
+                                        {invoiceRows.map((row, i) => (
                                             <tr key={i} className="table-row-alt hover:bg-yellow-50 transition-colors">
                                                 <td className="px-3 py-1.5 font-mono text-xs">{row.tracking_number || '-'}</td>
                                                 <td className="px-3 py-1.5">{row.buyer_name || '-'}</td>

@@ -2000,6 +2000,41 @@ async def generate_batch_invoices(
 import pymupdf as fitz  # PyMuPDF
 
 
+def parse_payment_order_text(text: str) -> list:
+    """Extract complete declarant / registration / model / amount row groups."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    matches = []
+    for i, line in enumerate(lines):
+        reference = re.fullmatch(r"2026\s+(\d+)[A-Za-z][A-Za-z0-9]*", line)
+        if not reference or i + 3 >= len(lines):
+            continue
+        if ("00RB" not in lines[i + 1].upper()
+                or not re.search(r"\bIM\d*\b", lines[i + 2], re.IGNORECASE)):
+            continue
+        amount = lines[i + 3].replace(",", "")
+        if not re.fullmatch(r"\d+\.\d{2}", amount):
+            continue
+        matches.append({
+            "declarant_ref": line,
+            "digits": reference.group(1),
+            "amount_ec": float(amount),
+        })
+    return matches
+
+
+@app.post("/parse-payment-order")
+async def parse_payment_order(pdf_file: UploadFile = File(...)):
+    pdf_bytes = await pdf_file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF file uploaded.")
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            text = "\n".join(page.get_text("text") or "" for page in doc)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not open PDF.") from exc
+    return parse_payment_order_text(text)
+
+
 def _extract_tracking_from_page(text: str) -> str:
     """Extract tracking number from waybill page text using multiple patterns."""
     if not text:
