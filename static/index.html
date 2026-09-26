@@ -95,17 +95,11 @@
 <body class="min-h-screen">
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useRef, useCallback } = React;
+        const { useState, useRef, useCallback, useEffect } = React;
 
         // ─── Waybills Tab ──────────────────────────────────────────────
-        function WaybillsTab() {
+        function WaybillsTab({ info, setInfo, onGenerated }) {
             const [step, setStep] = useState(1);
-            const [info, setInfo] = useState({
-                master_awb: '',
-                voyage_number: '',
-                date_of_departure: '',
-                carrier_name: ''
-            });
             const [xlsxFile, setXlsxFile] = useState(null);
             const [parsedRows, setParsedRows] = useState([]);
             const [loading, setLoading] = useState(false);
@@ -186,6 +180,7 @@
                         a.download = disp ? disp.split('filename=')[1] : 'waybills.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
+                        onGenerated('Waybills', info, xlsxFile?.name || '', parsedRows.length);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Generation failed');
@@ -434,15 +429,8 @@
 
 
         // ─── Declarations Tab ──────────────────────────────────────────
-        function DeclarationsTab() {
+        function DeclarationsTab({ info, setInfo, onGenerated }) {
             const [step, setStep] = useState(1);
-            const [info, setInfo] = useState({
-                master_awb: '',
-                manifest_reference: '',
-                voyage_number: '',
-                date_of_departure: '',
-                carrier_name: ''
-            });
             const [xlsxFile, setXlsxFile] = useState(null);
             const [invoiceZip, setInvoiceZip] = useState(null);
             const [parsedRows, setParsedRows] = useState([]);
@@ -539,6 +527,7 @@
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
                         setDeclarationsGenerated(true);
+                        onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Generation failed');
@@ -580,6 +569,7 @@
                         a.download = 'batch_invoices.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
+                        onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Failed to generate invoices');
@@ -1318,9 +1308,122 @@ Customs Declarant Code: DC2114`
         }
 
 
+        // ─── Session History ──────────────────────────────────────────
+        function HistoryTab({ history, onLoad, onDelete, onClear }) {
+            return (
+                <div className="fade-in">
+                    <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold text-asian-maroon">SESSION HISTORY</h2>
+                            <p className="text-sm text-gray-500 mt-1">Click any entry to restore shipment details</p>
+                        </div>
+                        {history.length > 0 && (
+                            <button onClick={onClear} className="text-xs border border-asian-red text-asian-red px-3 py-2 rounded-lg hover:bg-red-50 transition-colors">
+                                Clear All History
+                            </button>
+                        )}
+                    </div>
+                    {history.length === 0 ? (
+                        <div className="card-warm rounded-lg p-10 text-center text-gray-500">No history yet. Generated sessions will appear here.</div>
+                    ) : (
+                        <div className="space-y-4">
+                            {history.map(entry => (
+                                <div key={entry.id} role="button" tabIndex={0}
+                                    onClick={() => onLoad(entry)}
+                                    onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onLoad(entry); } }}
+                                    className="card-warm rounded-lg p-5 cursor-pointer hover:border-asian-gold focus:outline-none focus:ring-2 focus:ring-asian-gold transition-colors">
+                                    <div className="flex flex-wrap items-center gap-3 mb-3">
+                                        <strong className="text-asian-maroon">{entry.date}</strong>
+                                        <span className="bg-asian-gold/20 text-asian-maroon text-xs font-bold uppercase rounded-full px-3 py-1">{entry.type}</span>
+                                    </div>
+                                    <p className="text-sm text-asian-charcoal break-words">
+                                        <span className="font-medium">Master AWB:</span> {entry.master_awb || '—'} <span className="text-gray-300 mx-2">|</span>
+                                        <span className="font-medium">Voyage:</span> {entry.voyage_number || '—'} <span className="text-gray-300 mx-2">|</span>
+                                        <span className="font-medium">Carrier:</span> {entry.carrier_name || '—'}
+                                    </p>
+                                    <p className="text-sm text-gray-500 mt-2 break-all">Spreadsheet: {entry.spreadsheet_name || '—'} ({entry.row_count || 0} rows)</p>
+                                    <div className="flex gap-3 mt-4">
+                                        <button onClick={(e) => { e.stopPropagation(); onLoad(entry); }}
+                                            className="px-4 py-2 bg-asian-maroon text-asian-gold text-sm font-semibold rounded-lg hover:bg-asian-maroon-deep">Load Details</button>
+                                        <button onClick={(e) => { e.stopPropagation(); onDelete(entry.id); }}
+                                            className="px-4 py-2 border border-asian-red text-asian-red text-sm rounded-lg hover:bg-red-50">Delete</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // ─── Main App with Tabs ────────────────────────────────────────
         function MainApp({ onSignOut }) {
             const [activeTab, setActiveTab] = useState('waybills');
+            const [waybillForm, setWaybillForm] = useState({ master_awb: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
+            const [decForm, setDecForm] = useState({ master_awb: '', manifest_reference: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
+            const [history, setHistory] = useState([]);
+
+            const loadFromLocalStorage = () => {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('scs_history') || '[]');
+                    setHistory(Array.isArray(saved) ? saved.slice(0, 50) : []);
+                } catch (e) {
+                    setHistory([]);
+                }
+            };
+            useEffect(() => { loadFromLocalStorage(); }, []);
+
+            const saveToHistory = (entry) => {
+                const next = [entry, ...history].slice(0, 50);
+                try {
+                    localStorage.setItem('scs_history', JSON.stringify(next));
+                    setHistory(next);
+                } catch (e) {
+                    // Storage may be unavailable; never interrupt a completed download.
+                }
+            };
+
+            const handleGenerated = (type, info, spreadsheetName, rowCount) => {
+                const hasWaybills = type === 'Declarations' && history.some(item =>
+                    (item.type === 'Waybills' || item.type === 'Waybills + Declarations') &&
+                    item.master_awb === info.master_awb && item.spreadsheet_name === spreadsheetName
+                );
+                const now = new Date();
+                saveToHistory({
+                    id: `${now.getTime()}-${Math.random().toString(36).slice(2)}`,
+                    date: new Intl.DateTimeFormat('sv-SE', {
+                        timeZone: 'America/Anguilla', year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+                    }).format(now),
+                    type: hasWaybills ? 'Waybills + Declarations' : type,
+                    master_awb: info.master_awb || '',
+                    voyage_number: info.voyage_number || '',
+                    date_of_departure: info.date_of_departure || '',
+                    carrier_name: info.carrier_name || '',
+                    manifest_reference: info.manifest_reference || '',
+                    spreadsheet_name: spreadsheetName,
+                    row_count: rowCount
+                });
+            };
+
+            const loadDetails = (entry) => {
+                const details = {
+                    master_awb: entry.master_awb || '',
+                    voyage_number: entry.voyage_number || '',
+                    date_of_departure: entry.date_of_departure || '',
+                    carrier_name: entry.carrier_name || ''
+                };
+                setWaybillForm(details);
+                setDecForm({ ...details, manifest_reference: entry.manifest_reference || '' });
+                setActiveTab('waybills');
+            };
+            const deleteHistory = (id) => {
+                const next = history.filter(entry => entry.id !== id);
+                try { localStorage.setItem('scs_history', JSON.stringify(next)); setHistory(next); } catch (e) { /* Storage unavailable. */ }
+            };
+            const clearHistory = () => {
+                try { localStorage.removeItem('scs_history'); setHistory([]); } catch (e) { /* Storage unavailable. */ }
+            };
 
             return (
                 <div className="max-w-5xl mx-auto px-4 py-0">
@@ -1340,26 +1443,31 @@ Customs Declarant Code: DC2114`
                     </div>
 
                     {/* Tabs */}
-                    <div className="flex justify-center bg-asian-red rounded-b-lg -mx-4 px-4 shadow-md">
+                    <div className="flex justify-start md:justify-center overflow-x-auto bg-asian-red rounded-b-lg -mx-4 px-4 shadow-md">
                         <button
                             onClick={() => setActiveTab('waybills')}
-                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'waybills' ? 'tab-active' : 'tab-inactive'}`}>
+                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'waybills' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-file-alt mr-2"></i>House Waybills
                         </button>
                         <button
                             onClick={() => setActiveTab('declarations')}
-                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'declarations' ? 'tab-active' : 'tab-inactive'}`}>
+                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'declarations' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-file-invoice mr-2"></i>Declarations
                         </button>
                         <button
                             onClick={() => setActiveTab('manifest')}
-                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'manifest' ? 'tab-active' : 'tab-inactive'}`}>
+                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'manifest' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-clipboard-list mr-2"></i>Manifest
                         </button>
                         <button
                             onClick={() => setActiveTab('invoice')}
-                            className={`px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'invoice' ? 'tab-active' : 'tab-inactive'}`}>
+                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'invoice' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fas fa-receipt mr-2"></i>Customer Invoice
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'history' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fas fa-history mr-2"></i>History
                         </button>
                     </div>
 
@@ -1371,11 +1479,17 @@ Customs Declarant Code: DC2114`
                             ? 'Step 2 of 2: After waybills are registered in ASYCUDA, generate customs declarations here.'
                             : activeTab === 'manifest'
                             ? 'Generate a professional cargo manifest PDF from your shipment spreadsheet.'
+                            : activeTab === 'history'
+                            ? 'Saved shipment details can be loaded into both generation tabs. Re-upload the spreadsheet to generate files.'
                             : 'Generate a printable customs clearance invoice for your customer.'}
                     </div>
 
                     {/* Tab Content */}
-                    {activeTab === 'waybills' ? <WaybillsTab /> : activeTab === 'declarations' ? <DeclarationsTab /> : activeTab === 'manifest' ? <ManifestTab /> : <CustomerInvoiceTab />}
+                    {activeTab === 'waybills' ? <WaybillsTab info={waybillForm} setInfo={setWaybillForm} onGenerated={handleGenerated} />
+                        : activeTab === 'declarations' ? <DeclarationsTab info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} />
+                        : activeTab === 'manifest' ? <ManifestTab />
+                        : activeTab === 'history' ? <HistoryTab history={history} onLoad={loadDetails} onDelete={deleteHistory} onClear={clearHistory} />
+                        : <CustomerInvoiceTab />}
 
                     {/* Footer */}
                     <div className="mt-8 mb-6 text-center text-gray-400 text-sm">
