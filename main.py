@@ -1946,20 +1946,30 @@ async def generate_batch_invoices(
     if not rows:
         raise HTTPException(status_code=400, detail="No valid data rows found in the spreadsheet.")
 
+    # Collect invoice data and sort alphabetically by first name
+    invoice_items = []
+    for row in rows:
+        tracking = safe_str(row.get("tracking_number", "")).strip()
+        if not tracking:
+            continue
+        customs_duties_val = float(duties.get(tracking, 0))
+        if customs_duties_val <= 0:
+            continue
+        buyer_name = safe_str(row.get("buyer_name", ""))
+        invoice_items.append((buyer_name, row, tracking, customs_duties_val))
+
+    # Sort by first name alphabetically
+    invoice_items.sort(key=lambda x: x[0].strip().split()[0].upper() if x[0].strip() else "")
+
+    if not invoice_items:
+        raise HTTPException(status_code=400, detail="No invoices generated. Ensure duties are entered for at least one customer.")
+
     zip_buffer = io.BytesIO()
     invoice_count = 0
+    all_pdf_pages = []  # collect individual PDFs for combined document
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for row in rows:
-            tracking = safe_str(row.get("tracking_number", "")).strip()
-            if not tracking:
-                continue
-
-            customs_duties_val = float(duties.get(tracking, 0))
-            if customs_duties_val <= 0:
-                continue
-
-            buyer_name = safe_str(row.get("buyer_name", ""))
+        for buyer_name, row, tracking, customs_duties_val in invoice_items:
             buyer_addr_parts = filter(None, [
                 safe_str(row.get("buyer_address1", "")),
                 safe_str(row.get("buyer_city", "")),
@@ -1987,12 +1997,22 @@ async def generate_batch_invoices(
                 total_order_value=total_order_value,
                 customs_duties=customs_duties_val,
             )
-            buyer_name_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
+            buyer_name_clean = re.sub(r'[^A-Z0-9]', '_', buyer_name.upper().strip()).strip('_')
             zf.writestr(f"SCS_Invoice_{tracking}_{buyer_name_clean}.pdf", pdf_bytes)
+            all_pdf_pages.append(pdf_bytes)
             invoice_count += 1
 
-    if invoice_count == 0:
-        raise HTTPException(status_code=400, detail="No invoices generated. Ensure duties are entered for at least one customer.")
+        # Build combined PDF using pymupdf
+        if all_pdf_pages:
+            import pymupdf as fitz_combine
+            combined_doc = fitz_combine.open()
+            for pb in all_pdf_pages:
+                src = fitz_combine.open(stream=pb, filetype="pdf")
+                combined_doc.insert_pdf(src)
+                src.close()
+            combined_bytes = combined_doc.tobytes()
+            combined_doc.close()
+            zf.writestr("ALL_INVOICES_COMBINED.pdf", combined_bytes)
 
     zip_buffer.seek(0)
 
