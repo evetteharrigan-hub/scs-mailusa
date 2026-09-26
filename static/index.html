@@ -331,7 +331,7 @@
                         <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
                             <i className="fas fa-cut text-asian-gold mr-2"></i>PDF WAYBILL SPLITTER
                         </h3>
-                        <p className="text-sm text-gray-500 mb-4">Upload a multi-page PDF — waybills named by tracking + consignee, invoices named by tracking + Bill To name</p>
+                        <p className="text-sm text-gray-500 mb-4">Drop a ZIP of invoices or individual PDF files here</p>
 
                         {splitError && (
                             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center text-sm">
@@ -728,7 +728,7 @@
 
                             {/* Invoice ZIP */}
                             <div className="mb-5">
-                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Upload Invoice ZIP File (required for declarations)</label>
+                                <label className="block text-sm font-medium text-asian-charcoal mb-2">Upload Invoice ZIP or PDF Files (required for declarations)</label>
                                 <div className="drop-zone border-2 border-dashed border-asian-red rounded-lg p-5 text-center cursor-pointer bg-asian-cream hover:bg-red-50"
                                     onDrop={handleInvoiceZip} onDragOver={dragOver} onDragLeave={dragLeave} onClick={() => zipRef.current?.click()}>
                                     {invoiceZip ? (
@@ -745,7 +745,7 @@
                                         </div>
                                     )}
                                 </div>
-                                <input ref={zipRef} type="file" accept=".zip" className="hidden" onChange={handleInvoiceZip} />
+                                <input ref={zipRef} type="file" accept=".zip,.pdf" className="hidden" onChange={handleInvoiceZip} />
                             </div>
 
                             <div className="mt-6 flex justify-between">

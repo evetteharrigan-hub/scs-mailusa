@@ -1255,17 +1255,22 @@ async def generate_xmls(
     invoices = {}
     pdf_data = []
     if invoice_zip and invoice_zip.filename:
-        zip_bytes = await invoice_zip.read()
-        if zip_bytes:
-            import zipfile as zf_mod
-            with zf_mod.ZipFile(io.BytesIO(zip_bytes), 'r') as zin:
-                for name in zin.namelist():
-                    if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
-                        pdf_bytes = zin.read(name)
-                        if pdf_bytes:
-                            pdf_data.append((os.path.basename(name), pdf_bytes))
+        file_bytes = await invoice_zip.read()
+        if file_bytes:
+            fname = invoice_zip.filename.lower()
+            if fname.endswith('.zip'):
+                import zipfile as zf_mod
+                with zf_mod.ZipFile(io.BytesIO(file_bytes), 'r') as zin:
+                    for name in zin.namelist():
+                        if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
+                            pb = zin.read(name)
+                            if pb:
+                                pdf_data.append((os.path.basename(name), pb))
+            elif fname.endswith('.pdf'):
+                # Single PDF uploaded directly
+                pdf_data.append((invoice_zip.filename, file_bytes))
             if pdf_data:
-                print(f"Parsing {len(pdf_data)} invoice PDF(s) from ZIP...")
+                print(f"Parsing {len(pdf_data)} invoice PDF(s)...")
                 invoices = parse_all_invoices(pdf_data)
                 print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
     
@@ -1390,17 +1395,22 @@ async def generate_declarations(
     invoices = {}
     pdf_data = []
     if invoice_zip and invoice_zip.filename:
-        zip_bytes = await invoice_zip.read()
-        if zip_bytes:
-            import zipfile as zf_mod
-            with zf_mod.ZipFile(io.BytesIO(zip_bytes), 'r') as zin:
-                for name in zin.namelist():
-                    if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
-                        pdf_bytes = zin.read(name)
-                        if pdf_bytes:
-                            pdf_data.append((os.path.basename(name), pdf_bytes))
+        file_bytes = await invoice_zip.read()
+        if file_bytes:
+            fname = invoice_zip.filename.lower()
+            if fname.endswith('.zip'):
+                import zipfile as zf_mod
+                with zf_mod.ZipFile(io.BytesIO(file_bytes), 'r') as zin:
+                    for name in zin.namelist():
+                        if name.lower().endswith('.pdf') and not name.startswith('__MACOSX'):
+                            pb = zin.read(name)
+                            if pb:
+                                pdf_data.append((os.path.basename(name), pb))
+            elif fname.endswith('.pdf'):
+                # Single PDF uploaded directly
+                pdf_data.append((invoice_zip.filename, file_bytes))
             if pdf_data:
-                print(f"Parsing {len(pdf_data)} invoice PDF(s) from ZIP...")
+                print(f"Parsing {len(pdf_data)} invoice PDF(s)...")
                 invoices = parse_all_invoices(pdf_data)
                 print(f"Successfully parsed {len(invoices)} invoice(s) with item data")
     
