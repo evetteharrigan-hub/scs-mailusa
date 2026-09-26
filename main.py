@@ -730,8 +730,8 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     
     fob_xcd = round(fob_usd * XCD_RATE, 2)
     cif_xcd = round(cif_usd * XCD_RATE, 2)
-    other_cost_usd = round(cif_usd - fob_usd, 2)
-    other_cost_xcd = round(other_cost_usd * XCD_RATE, 2)
+    other_cost_usd = 0.0
+    other_cost_xcd = 0.0
     
     master_awb = shipment_info.get("master_awb", "")
     carrier_name = shipment_info.get("carrier_name", "").upper()
@@ -766,10 +766,10 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
         else:
             item_cif_usd = item_fob_usd
         
-        item_other_cost_usd = item_cif_usd - item_fob_usd
+        item_other_cost_usd = 0.0
         item_fob_xcd = round(item_fob_usd * XCD_RATE, 2)
         item_cif_xcd = round(item_cif_usd * XCD_RATE, 2)
-        item_other_cost_xcd = round(item_other_cost_usd * XCD_RATE, 2)
+        item_other_cost_xcd = 0.0
         alpha = round(item_fob_usd / fob_usd, 6) if fob_usd > 0 else round(1.0 / item_count, 6)
         item_weight = round(weight / item_count, 2) if item_count > 0 else 0
         
@@ -957,7 +957,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     x.append('<Valuation>')
     x.append('<Calculation_working_mode>0</Calculation_working_mode>')
     x.append(f'<Weight><Gross_weight>{weight}</Gross_weight></Weight>')
-    x.append(f'<Total_cost>{other_cost_xcd}</Total_cost>')
+    x.append('<Total_cost>0.0</Total_cost>')
     x.append(f'<Total_CIF>{cif_xcd}</Total_CIF>')
     x.append('<Gs_Invoice>')
     x.append(f'<Amount_national_currency>{fob_xcd}</Amount_national_currency>')
