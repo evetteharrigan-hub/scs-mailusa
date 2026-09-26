@@ -429,7 +429,7 @@
 
 
         // ─── Declarations Tab ──────────────────────────────────────────
-        function DeclarationsTab({ info, setInfo, onGenerated }) {
+        function DeclarationsTab({ info, setInfo, onGenerated, restoredData, onRestoredDataUsed }) {
             const [step, setStep] = useState(1);
             const [xlsxFile, setXlsxFile] = useState(null);
             const [invoiceZip, setInvoiceZip] = useState(null);
@@ -438,6 +438,9 @@
             const [generating, setGenerating] = useState(false);
             const [error, setError] = useState('');
             const [declarationsGenerated, setDeclarationsGenerated] = useState(false);
+            const [showStep3, setShowStep3] = useState(false);
+            const [restoredCustomers, setRestoredCustomers] = useState([]);
+            React.useEffect(() => { if (restoredData && restoredData.length > 0) { setRestoredCustomers(restoredData); setShowStep3(true); setStep(3); if (onRestoredDataUsed) onRestoredDataUsed(); } }, [restoredData]);
             const [dutiesMap, setDutiesMap] = useState({});
             const [arrivalDate, setArrivalDate] = useState('');
             const [generatingInvoices, setGeneratingInvoices] = useState(false);
@@ -1362,8 +1365,8 @@ Customs Declarant Code: DC2114`
             const [waybillForm, setWaybillForm] = useState({ master_awb: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [decForm, setDecForm] = useState({ master_awb: '', manifest_reference: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [history, setHistory] = useState([]);
-            const [restoredCustomers, setRestoredCustomers] = useState([]);
-            const [showStep3, setShowStep3] = useState(false);
+            const [restoredDecData, setRestoredDecData] = useState([]);
+            
 
             const loadFromLocalStorage = () => {
                 try {
@@ -1488,7 +1491,7 @@ Customs Declarant Code: DC2114`
 
                     {/* Tab Content */}
                     {activeTab === 'waybills' ? <WaybillsTab info={waybillForm} setInfo={setWaybillForm} onGenerated={handleGenerated} />
-                        : activeTab === 'declarations' ? <DeclarationsTab info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} />
+                        : activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} />
                         : activeTab === 'manifest' ? <ManifestTab />
                         : activeTab === 'history' ? <HistoryTab history={history} onLoad={loadDetails} onDelete={deleteHistory} onClear={clearHistory} />
                         : <CustomerInvoiceTab />}
