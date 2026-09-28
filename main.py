@@ -7,7 +7,7 @@ from typing import Optional, List
 import json
 from dataclasses import dataclass, field
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -2097,9 +2097,7 @@ def parse_payment_order_text(text: str) -> list:
     return matches
 
 
-@app.post("/parse-payment-order")
-async def parse_payment_order(pdf_file: UploadFile = File(...)):
-    pdf_bytes = await pdf_file.read()
+def parse_payment_order_pdf(pdf_bytes: bytes) -> list:
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Empty PDF file uploaded.")
     try:
@@ -2108,6 +2106,93 @@ async def parse_payment_order(pdf_file: UploadFile = File(...)):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Could not open PDF.") from exc
     return parse_payment_order_text(text)
+
+
+@app.post("/parse-payment-order")
+async def parse_payment_order(pdf_file: UploadFile = File(...)):
+    return parse_payment_order_pdf(await pdf_file.read())
+
+
+IMPORT_SHIPMENTS_SQL = """
+INSERT INTO shipments (tracking_number, buyer_name, description, date_of_arrival, cif_value,
+    customs_duties, clearance_fee, aaspa_security_fee, total_due)
+VALUES (%(tracking_number)s, %(buyer_name)s, %(description)s, %(date_of_arrival)s, %(cif_value)s,
+    %(customs_duties)s, %(clearance_fee)s, %(aaspa_security_fee)s, %(total_due)s)
+ON CONFLICT (tracking_number) DO UPDATE SET
+    buyer_name = EXCLUDED.buyer_name,
+    description = EXCLUDED.description,
+    date_of_arrival = EXCLUDED.date_of_arrival,
+    cif_value = EXCLUDED.cif_value,
+    customs_duties = EXCLUDED.customs_duties,
+    clearance_fee = EXCLUDED.clearance_fee,
+    aaspa_security_fee = EXCLUDED.aaspa_security_fee,
+    total_due = EXCLUDED.total_due
+RETURNING (xmax = 0) AS inserted
+"""
+
+
+@app.post("/portal/import-shipments")
+async def import_shipments(
+    xlsx_file: UploadFile = File(...),
+    pdf_file: Optional[UploadFile] = File(None),
+    arrival_date: str = Form(...),
+    user: dict = Depends(portal_module.any_user),
+):
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", arrival_date):
+            raise ValueError("Invalid format")
+        arrival = datetime.strptime(arrival_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid arrival_date. Use YYYY-MM-DD.") from exc
+
+    if not (xlsx_file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Upload an .xlsx spreadsheet.")
+    xlsx_bytes = await xlsx_file.read()
+    if not xlsx_bytes:
+        raise HTTPException(status_code=400, detail="Empty spreadsheet uploaded.")
+    try:
+        rows = parse_xlsx(xlsx_bytes)
+    except (ValueError, OSError, zipfile.BadZipFile, openpyxl.utils.exceptions.InvalidFileException) as exc:
+        raise HTTPException(status_code=400, detail="Could not read .xlsx spreadsheet.") from exc
+    if not rows:
+        raise HTTPException(status_code=400, detail="Spreadsheet has no shipments with tracking numbers.")
+
+    matches = []
+    if pdf_file is not None:
+        if not (pdf_file.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Upload a .pdf payment order.")
+        matches = parse_payment_order_pdf(await pdf_file.read())
+
+    records = {}
+    for row in rows:
+        tracking = str(row["tracking_number"]).strip()
+        if not tracking:
+            continue
+        duties = next((match["amount_ec"] for match in reversed(matches)
+                       if match["digits"] in tracking), 0)
+        records[tracking] = {
+            "tracking_number": tracking,
+            "buyer_name": str(row.get("buyer_name") or "").strip(),
+            "description": portal_module._describe(row.get("items_description")),
+            "date_of_arrival": arrival,
+            "cif_value": round(portal_module._num(row.get("cif_verified")), 2),
+            **portal_module.calc_fees(duties),
+        }
+    if not records:
+        raise HTTPException(status_code=400, detail="Spreadsheet has no shipments with tracking numbers.")
+
+    portal_module._require_db()
+    imported = updated = 0
+    with portal_module.get_conn() as conn:
+        cur = conn.cursor()
+        for record in records.values():
+            cur.execute(IMPORT_SHIPMENTS_SQL, record)
+            if cur.fetchone()[0]:
+                imported += 1
+            else:
+                updated += 1
+    return {"imported": imported, "updated": updated,
+            "message": f"{imported} shipments imported, {updated} updated"}
 
 
 def _extract_tracking_from_page(text: str) -> str:

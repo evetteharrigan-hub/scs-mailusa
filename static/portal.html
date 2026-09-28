@@ -84,6 +84,11 @@
   .divider { height: 1px; background: var(--line); margin: 16px 0; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+  .upload-zone { display: block; border: 2px dashed var(--gold); border-radius: 8px; background: var(--cream); padding: 12px; }
+  .upload-zone input { border: 0; padding: 0; background: transparent; }
+  .upload-zone input::file-selector-button { background: var(--maroon); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; margin-right: 10px; }
+  .upload-zone input:focus-visible { outline: 2px solid var(--gold); }
+  @media (max-width: 640px) { header.bar .inner { flex-wrap: wrap; } }
   @media (max-width: 640px) { dl.details { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } .hide-sm { display: none; } }
 </style>
 </head>
@@ -111,7 +116,7 @@
   <header class="bar">
     <div class="inner">
       <div class="brand"><h1>SCS-MAILUSA PORTAL</h1><p>Safe Cargo Services · Sandy Ground, Anguilla</p></div>
-      <div class="who"><span class="role-pill" id="role-pill"></span><button class="btn btn-ghost" id="logout-btn">Log Out</button></div>
+      <div class="who"><span class="role-pill" id="role-pill"></span><button class="btn btn-ghost" id="open-import-btn" type="button">Import Shipments</button><button class="btn btn-ghost" id="logout-btn">Log Out</button></div>
     </div>
   </header>
 
@@ -159,6 +164,24 @@
 </div>
 
 <!-- ─── MODALS ────────────────────────────────────────────── -->
+<div class="overlay hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+  <div class="modal">
+    <div class="modal-head"><h3 id="import-title">Import Shipments from Spreadsheet</h3><button type="button" data-close aria-label="Close">&times;</button></div>
+    <div class="modal-body">
+      <div id="import-msg" class="msg hidden" role="status" aria-live="polite"></div>
+      <form id="import-form">
+        <div class="field"><label for="import-date">Date of Arrival</label><input type="date" id="import-date" name="arrival_date" required></div>
+        <div class="field"><label for="import-xlsx">Excel spreadsheet (.xlsx)</label><div class="upload-zone"><input type="file" id="import-xlsx" name="xlsx_file" accept=".xlsx" required></div></div>
+        <div class="field"><label for="import-pdf">ASYCUDA Payment Order PDF (optional, auto-fills duties)</label><div class="upload-zone"><input type="file" id="import-pdf" name="pdf_file" accept=".pdf"></div></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-light" data-close>Cancel</button>
+          <button type="submit" class="btn btn-gold" id="import-btn">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="detail-modal">
   <div class="modal">
     <div class="modal-head"><h3 id="detail-title">Shipment Details</h3><button data-close>&times;</button></div>
@@ -304,6 +327,35 @@
     if (role === 'warehouse') { whSearch(); $('wh-q').focus(); }
     else { acSearch(); $('ac-q').focus(); }
   }
+
+  // ─── Shipment import (both roles) ───
+  $('open-import-btn').addEventListener('click', () => {
+    hide($('import-msg'));
+    if (!$('import-date').value) $('import-date').value = todayLocal();
+    $('import-modal').classList.remove('hidden');
+    $('import-date').focus();
+  });
+  $('import-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hide($('import-msg'));
+    const btn = $('import-btn');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    try {
+      const data = new FormData($('import-form'));
+      if (!$('import-pdf').files.length) data.delete('pdf_file');
+      const res = await api('/portal/import-shipments', { method: 'POST', body: data });
+      const result = await res.json();
+      show($('import-msg'), `✓ ${result.imported} shipments imported, ${result.updated} updated`, 'ok');
+      $('import-xlsx').value = '';
+      $('import-pdf').value = '';
+      if (session.role === 'warehouse') await whSearch();
+      else await acSearch();
+    } catch (err) {
+      show($('import-msg'), err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Import';
+    }
+  });
 
   // ─── Warehouse ───
   let whRows = [];
