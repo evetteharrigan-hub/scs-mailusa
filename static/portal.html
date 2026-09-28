@@ -236,6 +236,11 @@
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const money = (v) => 'EC$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const moneyBoth = (v) => {
+    const ec = Number(v || 0);
+    const usd = ec / 2.6882;
+    return `EC$${ec.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} <span style="color:#777;font-size:0.85em">(US$${usd.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})})</span>`;
+  };
   const fmtDate = (s) => {
     if (!s) return '—';
     const d = new Date(String(s).slice(0, 10) + 'T12:00:00');
@@ -439,10 +444,10 @@
       ['Manifest Reference', esc(r.manifest_reference) || '—'],
       ['Voyage / Flight', esc(r.voyage_number) || '—'],
       ['CIF Value', r.cif_value ? '$' + Number(r.cif_value).toFixed(2) : '—'],
-      ['Customs Duties', money(r.customs_duties)],
-      ['5% Clearance Fee', money(r.clearance_fee)],
-      ['AASPA/Security Fee', money(r.aaspa_security_fee)],
-      ['Total Due', `<span class="total">${money(r.total_due)}</span>`],
+      ['Customs Duties', moneyBoth(r.customs_duties)],
+      ['5% Clearance Fee', moneyBoth(r.clearance_fee)],
+      ['AASPA/Security Fee', moneyBoth(r.aaspa_security_fee)],
+      ['Total Due', `<span class="total">${moneyBoth(r.total_due)}</span>`],
       ['Status', badge(r.paid) + (!r.paid && r.days_outstanding != null ? ` <span style="color:var(--muted);font-size:13px">${r.days_outstanding} day(s) since arrival</span>` : '')],
       ['Date Paid', fmtDate(r.date_paid)],
       ['Payment Method', esc(METHOD_LABELS[r.payment_method] || r.payment_method) || '—'],
