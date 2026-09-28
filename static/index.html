@@ -180,7 +180,7 @@
                         a.download = disp ? disp.split('filename=')[1] : 'waybills.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
-                        onGenerated('Waybills', info, xlsxFile?.name || '', parsedRows.length);
+                        onGenerated('Waybills', info, xlsxFile?.name || '', parsedRows.length, parsedRows);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Generation failed');
@@ -439,12 +439,23 @@
             const [error, setError] = useState('');
             const [declarationsGenerated, setDeclarationsGenerated] = useState(false);
             const [showStep3, setShowStep3] = useState(false);
-            const [restoredCustomers, setRestoredCustomers] = useState([]);
-            React.useEffect(() => { if (restoredData && restoredData.length > 0) { setRestoredCustomers(restoredData); setShowStep3(true); setStep(3); if (onRestoredDataUsed) onRestoredDataUsed(); } }, [restoredData]);
+            const [restoredRows, setRestoredRows] = useState([]);
+            React.useEffect(() => {
+                if (restoredData && restoredData.length > 0) {
+                    setRestoredRows(restoredData);
+                    setParsedRows([]);
+                    setXlsxFile(null);
+                    setDutiesMap({});
+                    setError('');
+                    setShowStep3(true);
+                    setStep(3);
+                    if (onRestoredDataUsed) onRestoredDataUsed();
+                }
+            }, [restoredData]);
             const [dutiesMap, setDutiesMap] = useState({});
             const [paymentOrderSuccess, setPaymentOrderSuccess] = useState('');
             const [uploadingPaymentOrder, setUploadingPaymentOrder] = useState(false);
-            const invoiceRows = parsedRows.length ? parsedRows : restoredCustomers;
+            const invoiceRows = restoredRows.length ? restoredRows : parsedRows;
             const [arrivalDate, setArrivalDate] = useState('');
             const [generatingInvoices, setGeneratingInvoices] = useState(false);
             const xlsxRef = useRef(null);
@@ -458,6 +469,8 @@
                 const file = e.dataTransfer?.files[0] || e.target.files?.[0];
                 if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
                     setXlsxFile(file);
+                    setRestoredRows([]);
+                    setShowStep3(false);
                     setError('');
                 } else {
                     setError('Please upload an Excel file (.xlsx)');
@@ -534,7 +547,7 @@
                         window.URL.revokeObjectURL(url);
                         setDeclarationsGenerated(true);
                         setStep(3);
-                        onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length);
+                        onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length, parsedRows);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Generation failed');
@@ -600,15 +613,26 @@
                     return;
                 }
                 setGeneratingInvoices(true); setError('');
-                const fd = new FormData();
-                fd.append('xlsx_file', xlsxFile);
-                fd.append('date_of_departure', info.date_of_departure);
-                fd.append('arrival_date', arrivalDate);
-                fd.append('master_awb', info.master_awb);
-                fd.append('carrier_name', info.carrier_name);
-                fd.append('duties_map', JSON.stringify(activeDuties));
+                const usingSavedRows = restoredRows.length > 0;
+                let url = '/generate-batch-invoices-json';
+                let options = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows: invoiceRows, arrival_date: arrivalDate, duties_map: activeDuties })
+                };
+                if (!usingSavedRows) {
+                    const fd = new FormData();
+                    fd.append('xlsx_file', xlsxFile);
+                    fd.append('date_of_departure', info.date_of_departure);
+                    fd.append('arrival_date', arrivalDate);
+                    fd.append('master_awb', info.master_awb);
+                    fd.append('carrier_name', info.carrier_name);
+                    fd.append('duties_map', JSON.stringify(activeDuties));
+                    url = '/generate-batch-invoices';
+                    options = { method: 'POST', body: fd };
+                }
                 try {
-                    const res = await fetch('/generate-batch-invoices', { method: 'POST', body: fd });
+                    const res = await fetch(url, options);
                     if (res.ok) {
                         const blob = await res.blob();
                         const url = window.URL.createObjectURL(blob);
@@ -617,7 +641,7 @@
                         a.download = 'batch_invoices.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
-                        onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length);
+                        if (!usingSavedRows) onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length, parsedRows);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Failed to generate invoices');
@@ -760,7 +784,7 @@
                     )}
 
                     {/* Step 3: Preview & Generate */}
-                    {step === 3 && (
+                    {step === 3 && !restoredRows.length && (
                         <div className="card-warm rounded-lg p-6">
                             <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
                                 <i className="fas fa-table text-asian-gold mr-2"></i>Preview & Generate
@@ -816,7 +840,9 @@
                             </h3>
                             <p className="text-sm text-gray-500 mb-4">Enter customs duties for each customer to generate their invoices.</p>
 
-                            <div className="mb-4">
+                            {restoredRows.length > 0 ? (
+                                <p className="text-sm text-asian-maroon mb-4">Using saved session data — no upload needed</p>
+                            ) : <div className="mb-4">
                                 <label htmlFor="payment-order-pdf" className="block text-sm font-medium text-asian-charcoal mb-2">
                                     Upload ASYCUDA Payment Order PDF to auto-fill duties
                                 </label>
@@ -829,7 +855,7 @@
                                     className="block w-full text-sm text-asian-charcoal file:mr-3 file:rounded-lg file:border-0 file:bg-asian-maroon file:px-4 file:py-2 file:font-medium file:text-asian-gold disabled:opacity-50" />
                                 {uploadingPaymentOrder && <p className="mt-2 text-sm text-gray-500">Parsing payment order...</p>}
                                 {paymentOrderSuccess && <p role="status" className="mt-2 text-sm text-green-700">{paymentOrderSuccess}</p>}
-                            </div>
+                            </div>}
 
                             <div className="overflow-x-auto border border-asian-gold-dark/20 rounded-lg max-h-72 overflow-y-auto mb-4">
                                 <table className="w-full text-sm">
@@ -1408,6 +1434,10 @@ Customs Declarant Code: DC2114`
                                     <div className="flex gap-3 mt-4">
                                         <button onClick={(e) => { e.stopPropagation(); onLoad(entry); }}
                                             className="px-4 py-2 bg-asian-maroon text-asian-gold text-sm font-semibold rounded-lg hover:bg-asian-maroon-deep">Load Details</button>
+                                        {Array.isArray(entry.rows) && entry.rows.length > 0 && (
+                                            <button onClick={(e) => { e.stopPropagation(); onLoad(entry, true); }}
+                                                className="px-4 py-2 bg-asian-red text-white text-sm font-semibold rounded-lg hover:bg-asian-maroon">Enter Duties & Create Invoices</button>
+                                        )}
                                         <button onClick={(e) => { e.stopPropagation(); onDelete(entry.id); }}
                                             className="px-4 py-2 border border-asian-red text-asian-red text-sm rounded-lg hover:bg-red-50">Delete</button>
                                     </div>
@@ -1448,7 +1478,7 @@ Customs Declarant Code: DC2114`
                 }
             };
 
-            const handleGenerated = (type, info, spreadsheetName, rowCount) => {
+            const handleGenerated = (type, info, spreadsheetName, rowCount, rows = []) => {
                 const hasWaybills = type === 'Declarations' && history.some(item =>
                     (item.type === 'Waybills' || item.type === 'Waybills + Declarations') &&
                     item.master_awb === info.master_awb && item.spreadsheet_name === spreadsheetName
@@ -1467,11 +1497,24 @@ Customs Declarant Code: DC2114`
                     carrier_name: info.carrier_name || '',
                     manifest_reference: info.manifest_reference || '',
                     spreadsheet_name: spreadsheetName,
-                    row_count: rowCount
+                    row_count: rowCount,
+                    rows: rows.map(r => ({
+                        tracking_number: r.tracking_number || r['Tracking Number'] || '',
+                        buyer_name: r.buyer_name || r['Buyer Name'] || '',
+                        buyer_address1: r.buyer_address1 || r['Buyer Address1'] || '',
+                        buyer_city: r.buyer_city || r['Buyer City'] || '',
+                        buyer_state: r.buyer_state || r['Buyer State'] || '',
+                        buyer_phone: r.buyer_phone || r['Buyer Phone'] || '',
+                        buyer_email: r.buyer_email || r['Buyer Email'] || '',
+                        shipper: r.shipper || r['Shipper'] || '',
+                        cn35_awb: r.cn35_awb || r['CN35 AWB'] || '',
+                        items_description: r.items_description || r['Items Description'] || '',
+                        fob_verified: r.fob_verified || r['Fob Verified'] || '0'
+                    }))
                 });
             };
 
-            const loadDetails = (entry) => {
+            const loadDetails = (entry, enterDuties = false) => {
                 const details = {
                     master_awb: entry.master_awb || '',
                     voyage_number: entry.voyage_number || '',
@@ -1480,7 +1523,13 @@ Customs Declarant Code: DC2114`
                 };
                 setWaybillForm(details);
                 setDecForm({ ...details, manifest_reference: entry.manifest_reference || '' });
-                setActiveTab('waybills');
+                if (enterDuties && Array.isArray(entry.rows) && entry.rows.length > 0) {
+                    setRestoredDecData(entry.rows);
+                    setActiveTab('declarations');
+                } else {
+                    setRestoredDecData([]);
+                    setActiveTab('waybills');
+                }
             };
             const deleteHistory = (id) => {
                 const next = history.filter(entry => entry.id !== id);
@@ -1545,7 +1594,7 @@ Customs Declarant Code: DC2114`
                             : activeTab === 'manifest'
                             ? 'Generate a professional cargo manifest PDF from your shipment spreadsheet.'
                             : activeTab === 'history'
-                            ? 'Saved shipment details can be loaded into both generation tabs. Re-upload the spreadsheet to generate files.'
+                            ? 'Saved sessions with customer rows can create invoices without re-uploading the spreadsheet.'
                             : 'Generate a printable customs clearance invoice for your customer.'}
                     </div>
 

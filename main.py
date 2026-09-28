@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass, field
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -1925,6 +1926,18 @@ async def generate_customer_invoice(
 
 
 
+class BatchInvoicesJsonRequest(BaseModel):
+    rows: list[dict]
+    arrival_date: str = ""
+    duties_map: dict[str, float]
+
+
+@app.post("/generate-batch-invoices-json")
+async def generate_batch_invoices_json(request: BatchInvoicesJsonRequest):
+    """Generate invoices directly from rows saved in session history."""
+    return build_batch_invoices_zip(request.rows, request.arrival_date, request.duties_map)
+
+
 @app.post("/generate-batch-invoices")
 async def generate_batch_invoices(
     xlsx_file: UploadFile = File(...),
@@ -1943,6 +1956,10 @@ async def generate_batch_invoices(
     xlsx_bytes = await xlsx_file.read()
     rows = parse_xlsx(xlsx_bytes)
 
+    return build_batch_invoices_zip(rows, arrival_date, duties)
+
+
+def build_batch_invoices_zip(rows: list, arrival_date: str, duties: dict):
     if not rows:
         raise HTTPException(status_code=400, detail="No valid data rows found in the spreadsheet.")
 
