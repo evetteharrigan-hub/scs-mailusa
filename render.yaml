@@ -9,3 +9,7 @@ services:
         value: scs admin
       - key: SCS_MAILUSA_PASSWORD
         value: "123456"
+      - key: WAREHOUSE_PASSWORD
+        sync: false
+      - key: ACCOUNTING_PASSWORD
+        sync: false

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCS-MAILUSA Portal - Safe Cargo Services</title>
+<style>
+  :root {
+    --maroon: #7A1F2B; --maroon-dark: #5A131D; --gold: #C9A227; --gold-light: #F3E2A9;
+    --cream: #FAF7F0; --ink: #2B2B2B; --muted: #6B6B6B; --line: #E5DCCB;
+    --green: #1E7B4A; --green-bg: #E3F4EA; --red: #A3262A; --red-bg: #FBE6E6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--cream); color: var(--ink); }
+  .hidden { display: none !important; }
+  header.bar { background: linear-gradient(135deg, var(--maroon-dark), var(--maroon)); color: #fff; border-bottom: 4px solid var(--gold); }
+  header.bar .inner { max-width: 1150px; margin: 0 auto; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand h1 { margin: 0; font-size: 22px; letter-spacing: 3px; color: var(--gold); }
+  .brand p { margin: 2px 0 0; font-size: 12px; color: #F1E6D0; letter-spacing: 1px; }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .role-pill { background: var(--gold); color: var(--maroon-dark); font-weight: 700; padding: 4px 10px; border-radius: 999px; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+  main { max-width: 1150px; margin: 0 auto; padding: 24px 20px 60px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 2px 10px rgba(90,19,29,.06); padding: 20px; }
+  .btn { border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:disabled { opacity: .6; cursor: default; }
+  .btn-primary { background: var(--maroon); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--maroon-dark); }
+  .btn-gold { background: var(--gold); color: var(--maroon-dark); }
+  .btn-gold:hover:not(:disabled) { filter: brightness(.95); }
+  .btn-ghost { background: transparent; color: var(--gold); border: 1px solid rgba(201,162,39,.6); padding: 6px 12px; font-size: 12px; }
+  .btn-ghost:hover { background: rgba(0,0,0,.15); }
+  .btn-light { background: #F1ECE2; color: var(--ink); }
+  input, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; width: 100%; }
+  input:focus, select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,162,39,.2); }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--maroon); margin: 0 0 6px; }
+  .field { margin-bottom: 14px; }
+
+  /* Login */
+  #login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--maroon-dark), var(--maroon) 60%, #9A3040); padding: 20px; }
+  .login-box { width: 100%; max-width: 380px; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .login-head { background: var(--maroon-dark); text-align: center; padding: 26px 20px 20px; border-bottom: 4px solid var(--gold); }
+  .login-head h1 { margin: 0; color: var(--gold); letter-spacing: 3px; font-size: 24px; }
+  .login-head p { margin: 6px 0 0; color: #F1E6D0; font-size: 12px; letter-spacing: 1px; }
+  .login-body { padding: 24px; }
+  .login-body .btn { width: 100%; justify-content: center; padding: 12px; }
+
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .toolbar .search { flex: 1 1 320px; display: flex; gap: 8px; }
+  .section-title { margin: 0 0 14px; font-size: 18px; color: var(--maroon); display: flex; align-items: center; gap: 8px; }
+  .section-title small { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.data th { text-align: left; background: var(--maroon); color: #fff; padding: 10px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  table.data td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.data tbody tr { cursor: pointer; }
+  table.data tbody tr:nth-child(even) { background: #FCFAF5; }
+  table.data tbody tr:hover { background: var(--gold-light); }
+  td.num, th.num { text-align: right; }
+  td.desc { max-width: 280px; color: var(--muted); font-size: 13px; }
+  .mono { font-family: Consolas, Menlo, monospace; font-size: 13px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .badge.paid { background: var(--green-bg); color: var(--green); }
+  .badge.unpaid { background: var(--red-bg); color: var(--red); }
+  .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); }
+  .empty { text-align: center; color: var(--muted); padding: 30px; }
+  .count { color: var(--muted); font-size: 13px; margin: 10px 2px 0; }
+
+  .msg { padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+  .msg.err { background: var(--red-bg); color: var(--red); border: 1px solid #F0C4C4; }
+  .msg.ok { background: var(--green-bg); color: var(--green); border: 1px solid #BFE3CD; }
+
+  /* Modal */
+  .overlay { position: fixed; inset: 0; background: rgba(30,10,12,.55); display: flex; align-items: flex-start; justify-content: center; padding: 50px 16px; z-index: 50; overflow-y: auto; }
+  .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 560px; box-shadow: 0 20px 60px rgba(0,0,0,.35); overflow: hidden; }
+  .modal-head { background: var(--maroon); color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--gold); }
+  .modal-head h3 { margin: 0; font-size: 16px; }
+  .modal-head button { background: none; border: none; color: var(--gold); font-size: 22px; cursor: pointer; line-height: 1; }
+  .modal-body { padding: 18px; }
+  dl.details { display: grid; grid-template-columns: 170px 1fr; gap: 8px 12px; margin: 0; font-size: 14px; }
+  dl.details dt { color: var(--muted); font-weight: 600; }
+  dl.details dd { margin: 0; word-break: break-word; }
+  dl.details .total { font-weight: 700; color: var(--maroon); }
+  .divider { height: 1px; background: var(--line); margin: 16px 0; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+  @media (max-width: 640px) { dl.details { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN ─────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-head">
+      <h1>SCS-MAILUSA</h1>
+      <p>WAREHOUSE &amp; ACCOUNTING PORTAL</p>
+      <p style="margin-top:2px;opacity:.8">Safe Cargo Services · Sandy Ground, Anguilla</p>
+    </div>
+    <form class="login-body" id="login-form" autocomplete="on">
+      <div id="login-msg" class="msg err hidden"></div>
+      <div class="field"><label for="username">Username</label><input id="username" name="username" autocomplete="username" required></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+      <button class="btn btn-primary" type="submit" id="login-btn">Log In</button>
+    </form>
+  </div>
+</div>
+
+<!-- ─── APP ───────────────────────────────────────────────── -->
+<div id="app" class="hidden">
+  <header class="bar">
+    <div class="inner">
+      <div class="brand"><h1>SCS-MAILUSA PORTAL</h1><p>Safe Cargo Services · Sandy Ground, Anguilla</p></div>
+      <div class="who"><span class="role-pill" id="role-pill"></span><button class="btn btn-ghost" id="logout-btn">Log Out</button></div>
+    </div>
+  </header>
+
+  <main>
+    <div id="global-msg" class="msg hidden"></div>
+
+    <!-- Warehouse -->
+    <section id="warehouse-view" class="card hidden">
+      <h2 class="section-title">Package Lookup <small>search by customer name or tracking number</small></h2>
+      <div class="toolbar">
+        <form class="search" id="wh-search-form">
+          <input id="wh-q" placeholder="e.g. John Smith or 1Z999AA1…" autocomplete="off">
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Tracking #</th><th>Customer Name</th><th>Date of Arrival</th><th>Date Paid</th><th class="hide-sm">Description</th><th>Status</th></tr></thead>
+          <tbody id="wh-results"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="count" id="wh-count"></div>
+    </section>
+
+    <!-- Accounting -->
+    <section id="accounting-view" class="card hidden">
+      <h2 class="section-title">Customer Payments <small>search by customer name</small></h2>
+      <div class="toolbar">
+        <form class="search" id="ac-search-form">
+          <input id="ac-q" placeholder="Customer name…" autocomplete="off">
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+        <button class="btn btn-gold" id="daily-btn" type="button">Daily Cash Report</button>
+        <button class="btn btn-gold" id="unclaimed-btn" type="button">Unclaimed Packages</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Tracking #</th><th>Customer</th><th>Date of Arrival</th><th class="num">Total Due</th><th>Status</th></tr></thead>
+          <tbody id="ac-results"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="count" id="ac-count"></div>
+    </section>
+  </main>
+</div>
+
+<!-- ─── MODALS ────────────────────────────────────────────── -->
+<div class="overlay hidden" id="detail-modal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="detail-title">Shipment Details</h3><button data-close>&times;</button></div>
+    <div class="modal-body">
+      <div id="detail-msg" class="msg hidden"></div>
+      <dl class="details" id="detail-list"></dl>
+      <div id="pay-section" class="hidden">
+        <div class="divider"></div>
+        <h4 style="margin:0 0 12px;color:var(--maroon)" id="pay-heading">Record Payment</h4>
+        <form id="pay-form">
+          <div class="row2">
+            <div class="field"><label for="pay-date">Date Paid</label><input type="date" id="pay-date" required></div>
+            <div class="field"><label for="pay-method">Payment Method</label>
+              <select id="pay-method" required>
+                <option value="cash">Cash</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="card">Credit/Debit Card</option>
+                <option value="cheque">Cheque</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-light" data-close>Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pay-btn">Mark as Paid</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="daily-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head"><h3>Daily Cash Report</h3><button data-close>&times;</button></div>
+    <div class="modal-body">
+      <div id="daily-msg" class="msg hidden"></div>
+      <div class="field"><label for="daily-date">Report Date</label><input type="date" id="daily-date"></div>
+      <div id="daily-summary" style="font-size:14px;color:var(--muted);margin-bottom:12px"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" data-close>Close</button>
+        <button type="button" class="btn btn-primary" id="daily-download">Download PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const METHOD_LABELS = { cash: 'Cash', bank_transfer: 'Bank Transfer', card: 'Credit/Debit Card', cheque: 'Cheque' };
+  let current = null; // shipment open in detail modal
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = (v) => 'EC$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = (s) => {
+    if (!s) return '—';
+    const d = new Date(String(s).slice(0, 10) + 'T12:00:00');
+    return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const todayLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  const badge = (paid) => paid ? '<span class="badge paid">Paid</span>' : '<span class="badge unpaid">Unpaid</span>';
+
+  function show(el, text, kind) {
+    el.textContent = text; el.className = 'msg ' + (kind || 'err'); el.classList.remove('hidden');
+  }
+  function hide(el) { el.classList.add('hidden'); }
+
+  // ─── Session ───
+  const session = {
+    get role() { return sessionStorage.getItem('portal_role'); },
+    get token() { return sessionStorage.getItem('portal_token'); },
+    set(role, token) { sessionStorage.setItem('portal_role', role); sessionStorage.setItem('portal_token', token); },
+    clear() { sessionStorage.removeItem('portal_role'); sessionStorage.removeItem('portal_token'); }
+  };
+
+  async function api(path, opts = {}) {
+    if (!session.token) { logout('Please log in.'); throw new Error('Please log in.'); }
+    const headers = Object.assign({ 'Authorization': 'Bearer ' + session.token }, opts.headers || {});
+    const res = await fetch(path, Object.assign({}, opts, { headers }));
+    if (res.status === 401) {
+      logout('Your session has expired. Please log in again.');
+      throw new Error('Session expired. Please log in again.');
+    }
+    if (!res.ok) {
+      let detail = 'Request failed (' + res.status + ')';
+      try { const j = await res.json(); detail = j.detail || j.message || detail; } catch (e) {}
+      throw new Error(detail);
+    }
+    return res;
+  }
+
+  async function download(path, fallbackName) {
+    const res = await api(path);
+    const blob = await res.blob();
+    const disp = res.headers.get('Content-Disposition') || '';
+    const m = disp.match(/filename="?([^";]+)"?/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = m ? m[1] : fallbackName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  // ─── Login / logout ───
+  $('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hide($('login-msg'));
+    const btn = $('login-btn'); btn.disabled = true; btn.textContent = 'Logging in…';
+    try {
+      const fd = new FormData();
+      fd.append('username', $('username').value.trim());
+      fd.append('password', $('password').value);
+      const res = await fetch('/portal/login', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || data.detail || 'Invalid username or password');
+      session.set(data.role, data.token);
+      $('password').value = '';
+      enterApp();
+    } catch (err) {
+      show($('login-msg'), err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Log In';
+    }
+  });
+
+  function logout(message) {
+    session.clear();
+    closeModals();
+    if (typeof message === 'string' && message) show($('login-msg'), message); else hide($('login-msg'));
+    $('app').classList.add('hidden');
+    $('login-screen').classList.remove('hidden');
+  }
+  $('logout-btn').addEventListener('click', () => logout());
+
+  function enterApp() {
+    const role = session.role;
+    if (!role) return logout();
+    $('login-screen').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    $('role-pill').textContent = role;
+    $('warehouse-view').classList.toggle('hidden', role !== 'warehouse');
+    $('accounting-view').classList.toggle('hidden', role !== 'accounting');
+    if (role === 'warehouse') { whSearch(); $('wh-q').focus(); }
+    else { acSearch(); $('ac-q').focus(); }
+  }
+
+  // ─── Warehouse ───
+  let whRows = [];
+  async function whSearch() {
+    const tbody = $('wh-results');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Searching…</td></tr>';
+    try {
+      const res = await api('/portal/shipments/search?q=' + encodeURIComponent($('wh-q').value.trim()));
+      whRows = await res.json();
+      tbody.innerHTML = whRows.length ? whRows.map((r, i) => `
+        <tr data-i="${i}">
+          <td class="mono">${esc(r.tracking_number)}</td>
+          <td>${esc(r.buyer_name)}</td>
+          <td>${fmtDate(r.date_of_arrival)}</td>
+          <td>${fmtDate(r.date_paid)}</td>
+          <td class="desc hide-sm">${esc((r.description || '').slice(0, 90))}${(r.description || '').length > 90 ? '…' : ''}</td>
+          <td>${badge(r.paid)}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="empty">No packages found.</td></tr>';
+      $('wh-count').textContent = whRows.length ? `${whRows.length} package(s)` : '';
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(err.message)}</td></tr>`;
+    }
+  }
+  $('wh-search-form').addEventListener('submit', (e) => { e.preventDefault(); whSearch(); });
+  $('wh-results').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-i]'); if (tr) openDetail(whRows[+tr.dataset.i].tracking_number, false);
+  });
+
+  // ─── Accounting ───
+  let acRows = [];
+  async function acSearch() {
+    const tbody = $('ac-results');
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Searching…</td></tr>';
+    try {
+      const res = await api('/portal/accounting/search?q=' + encodeURIComponent($('ac-q').value.trim()));
+      acRows = await res.json();
+      tbody.innerHTML = acRows.length ? acRows.map((r, i) => `
+        <tr data-i="${i}">
+          <td class="mono">${esc(r.tracking_number)}</td>
+          <td>${esc(r.buyer_name)}</td>
+          <td>${fmtDate(r.date_of_arrival)}</td>
+          <td class="num">${money(r.total_due)}</td>
+          <td>${badge(r.paid)}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="empty">No customers found.</td></tr>';
+      const unpaid = acRows.filter(r => !r.paid);
+      $('ac-count').textContent = acRows.length
+        ? `${acRows.length} record(s) · ${unpaid.length} unpaid · outstanding ${money(unpaid.reduce((s, r) => s + (r.total_due || 0), 0))}` : '';
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(err.message)}</td></tr>`;
+    }
+  }
+  $('ac-search-form').addEventListener('submit', (e) => { e.preventDefault(); acSearch(); });
+  $('ac-results').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-i]'); if (tr) openDetail(acRows[+tr.dataset.i].tracking_number, true);
+  });
+
+  // ─── Detail modal (both roles) ───
+  async function openDetail(tracking, withPayment) {
+    hide($('detail-msg'));
+    $('detail-list').innerHTML = '<dd>Loading…</dd>';
+    $('pay-section').classList.add('hidden');
+    $('detail-modal').classList.remove('hidden');
+    try {
+      const res = await api('/portal/shipments/' + encodeURIComponent(tracking));
+      current = await res.json();
+      renderDetail(withPayment);
+    } catch (err) {
+      $('detail-list').innerHTML = '';
+      show($('detail-msg'), err.message);
+    }
+  }
+
+  function renderDetail(withPayment) {
+    const r = current;
+    $('detail-title').textContent = r.buyer_name || r.tracking_number;
+    const rows = [
+      ['Tracking #', `<span class="mono">${esc(r.tracking_number)}</span>`],
+      ['Customer Name', esc(r.buyer_name)],
+      ['Description', esc(r.description) || '—'],
+      ['Date of Arrival', fmtDate(r.date_of_arrival)],
+      ['Manifest Reference', esc(r.manifest_reference) || '—'],
+      ['Voyage / Flight', esc(r.voyage_number) || '—'],
+      ['CIF Value', r.cif_value ? '$' + Number(r.cif_value).toFixed(2) : '—'],
+      ['Customs Duties', money(r.customs_duties)],
+      ['5% Clearance Fee', money(r.clearance_fee)],
+      ['AASPA/Security Fee', money(r.aaspa_security_fee)],
+      ['Total Due', `<span class="total">${money(r.total_due)}</span>`],
+      ['Status', badge(r.paid) + (!r.paid && r.days_outstanding != null ? ` <span style="color:var(--muted);font-size:13px">${r.days_outstanding} day(s) since arrival</span>` : '')],
+      ['Date Paid', fmtDate(r.date_paid)],
+      ['Payment Method', esc(METHOD_LABELS[r.payment_method] || r.payment_method) || '—'],
+    ];
+    $('detail-list').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    if (withPayment && session.role === 'accounting') {
+      $('pay-section').classList.remove('hidden');
+      $('pay-heading').textContent = r.paid ? 'Update Payment Record' : 'Record Payment';
+      $('pay-btn').textContent = r.paid ? 'Update Payment' : 'Mark as Paid';
+      $('pay-date').value = r.date_paid ? r.date_paid.slice(0, 10) : todayLocal();
+      $('pay-method').value = r.payment_method || 'cash';
+    }
+  }
+
+  $('pay-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!current) return;
+    const btn = $('pay-btn'); btn.disabled = true;
+    hide($('detail-msg'));
+    try {
+      const res = await api('/portal/accounting/mark-paid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tracking_number: current.tracking_number, date_paid: $('pay-date').value, payment_method: $('pay-method').value })
+      });
+      const data = await res.json();
+      current = data.shipment;
+      renderDetail(true);
+      show($('detail-msg'), `Payment recorded: ${money(current.total_due)} by ${METHOD_LABELS[current.payment_method]} on ${fmtDate(current.date_paid)}.`, 'ok');
+      acSearch();
+    } catch (err) {
+      show($('detail-msg'), err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ─── Reports ───
+  async function loadDailySummary() {
+    const d = $('daily-date').value; const el = $('daily-summary');
+    if (!d) { el.textContent = ''; return; }
+    el.textContent = 'Loading…';
+    try {
+      const res = await api('/portal/accounting/daily-report?date=' + d);
+      const j = await res.json();
+      const g = j.grand_total;
+      el.innerHTML = g.count
+        ? `<b>${g.count}</b> payment(s) · Grand total <b style="color:var(--maroon)">${money(g.total)}</b><br>` +
+          j.subtotals.map(s => `${esc(s.label)}: ${money(s.total)} (${s.count})`).join(' · ')
+        : 'No payments recorded for this date.';
+    } catch (err) { el.textContent = err.message; }
+  }
+  $('daily-btn').addEventListener('click', () => {
+    hide($('daily-msg'));
+    if (!$('daily-date').value) $('daily-date').value = todayLocal();
+    $('daily-modal').classList.remove('hidden');
+    loadDailySummary();
+  });
+  $('daily-date').addEventListener('change', loadDailySummary);
+  $('daily-download').addEventListener('click', async () => {
+    const d = $('daily-date').value;
+    if (!d) return show($('daily-msg'), 'Choose a date first.');
+    const btn = $('daily-download'); btn.disabled = true; btn.textContent = 'Preparing…';
+    try { await download('/portal/accounting/daily-report/pdf?date=' + d, `SCS_Daily_Cash_Report_${d}.pdf`); }
+    catch (err) { show($('daily-msg'), err.message); }
+    finally { btn.disabled = false; btn.textContent = 'Download PDF'; }
+  });
+
+  $('unclaimed-btn').addEventListener('click', async () => {
+    const btn = $('unclaimed-btn'); const label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Preparing…';
+    try { await download('/portal/accounting/unclaimed/pdf?days=14', 'SCS_Unclaimed_Packages.pdf'); }
+    catch (err) { show($('global-msg'), err.message); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  });
+
+  // ─── Modal plumbing ───
+  function closeModals() { document.querySelectorAll('.overlay').forEach(o => o.classList.add('hidden')); current = null; }
+  document.querySelectorAll('.overlay').forEach(o => {
+    o.addEventListener('click', (e) => { if (e.target === o || e.target.closest('[data-close]')) closeModals(); });
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModals(); });
+
+  if (session.role && session.token) enterApp();
+})();
+</script>
+</body>
+</html>

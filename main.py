@@ -18,6 +18,15 @@ import pdfplumber
 
 app = FastAPI(title="ASYCUDA XML Generator - Safe Cargo Services")
 
+# ─── SCS-MAILUSA Portal (warehouse / accounting) ────────────────────────────────
+import portal as portal_module
+from portal import upsert_shipments
+
+
+@app.on_event("startup")
+async def _init_portal_db():
+    portal_module.init_db()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -1367,6 +1376,8 @@ async def generate_declarations(
     date_of_departure: str = Form(""),
     carrier_name: str = Form(""),
     invoice_zip: Optional[UploadFile] = File(default=None),
+    arrival_date: str = Form(""),
+    duties_map: str = Form("{}"),
 ):
     """Generate ONLY Declaration XMLs from uploaded spreadsheet and optional invoice ZIP.
     Requires manifest_reference (obtained after waybill upload to ASYCUDA)."""
@@ -1434,6 +1445,14 @@ async def generate_declarations(
                         break
     
     zip_buffer.seek(0)
+
+    # Record shipments in the portal DB (never blocks XML generation)
+    try:
+        _duties = json.loads(duties_map or "{}")
+    except json.JSONDecodeError:
+        _duties = {}
+    upsert_shipments(rows, arrival_date, _duties,
+                     shipment_info["manifest_reference"], shipment_info["voyage_number"])
     
     return StreamingResponse(
         zip_buffer,
@@ -1930,12 +1949,17 @@ class BatchInvoicesJsonRequest(BaseModel):
     rows: list[dict]
     arrival_date: str = ""
     duties_map: dict[str, float]
+    manifest_reference: str = ""
+    voyage_number: str = ""
 
 
 @app.post("/generate-batch-invoices-json")
 async def generate_batch_invoices_json(request: BatchInvoicesJsonRequest):
     """Generate invoices directly from rows saved in session history."""
-    return build_batch_invoices_zip(request.rows, request.arrival_date, request.duties_map)
+    response = build_batch_invoices_zip(request.rows, request.arrival_date, request.duties_map)
+    upsert_shipments(request.rows, request.arrival_date, request.duties_map,
+                     request.manifest_reference, request.voyage_number)
+    return response
 
 
 @app.post("/generate-batch-invoices")
@@ -1946,6 +1970,8 @@ async def generate_batch_invoices(
     master_awb: str = Form(""),
     carrier_name: str = Form(""),
     duties_map: str = Form("{}"),
+    manifest_reference: str = Form(""),
+    voyage_number: str = Form(""),
 ):
     """Generate customer invoice PDFs for all customers in the spreadsheet and return as ZIP."""
     try:
@@ -1956,7 +1982,9 @@ async def generate_batch_invoices(
     xlsx_bytes = await xlsx_file.read()
     rows = parse_xlsx(xlsx_bytes)
 
-    return build_batch_invoices_zip(rows, arrival_date, duties)
+    response = build_batch_invoices_zip(rows, arrival_date, duties)
+    upsert_shipments(rows, arrival_date, duties, manifest_reference, voyage_number)
+    return response
 
 
 def build_batch_invoices_zip(rows: list, arrival_date: str, duties: dict):
@@ -2523,4 +2551,13 @@ async def generate_manifest(
 
 
 # Mount static files LAST so API routes take priority
+# ─── Portal page + API (must be registered before the static mount) ────────────
+@app.get("/portal")
+async def portal():
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "portal.html"))
+
+
+app.include_router(portal_module.router)
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

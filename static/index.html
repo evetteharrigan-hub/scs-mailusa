@@ -534,6 +534,7 @@
                 fd.append('date_of_departure', info.date_of_departure);
                 fd.append('carrier_name', info.carrier_name);
                 if (invoiceZip) fd.append('invoice_zip', invoiceZip);
+                if (arrivalDate) fd.append('arrival_date', arrivalDate);
                 try {
                     const res = await fetch('/generate-declarations', { method: 'POST', body: fd });
                     if (res.ok) {
@@ -618,7 +619,7 @@
                 let options = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rows: invoiceRows, arrival_date: arrivalDate, duties_map: activeDuties })
+                    body: JSON.stringify({ rows: invoiceRows, arrival_date: arrivalDate, duties_map: activeDuties, manifest_reference: info.manifest_reference || '', voyage_number: info.voyage_number || '' })
                 };
                 if (!usingSavedRows) {
                     const fd = new FormData();
@@ -628,6 +629,8 @@
                     fd.append('master_awb', info.master_awb);
                     fd.append('carrier_name', info.carrier_name);
                     fd.append('duties_map', JSON.stringify(activeDuties));
+                    fd.append('manifest_reference', info.manifest_reference || '');
+                    fd.append('voyage_number', info.voyage_number || '');
                     url = '/generate-batch-invoices';
                     options = { method: 'POST', body: fd };
                 }
@@ -1548,6 +1551,11 @@ Customs Declarant Code: DC2114`
                             SCS-MAILUSA
                         </h1>
                         <p className="text-yellow-100/80 mt-2 text-sm tracking-wide">Safe Cargo Services · Anguilla</p>
+                        <a href="/portal" target="_blank" rel="noopener"
+                            title="Warehouse / Accounting Portal"
+                            className="absolute top-4 left-4 text-xs border border-asian-gold/40 text-asian-gold px-3 py-1.5 rounded-lg hover:bg-black/20 flex items-center transition-colors">
+                            <i className="fas fa-warehouse mr-1.5"></i>Portal
+                        </a>
                         <button
                             onClick={onSignOut}
                             title="Sign Out"
