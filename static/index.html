@@ -430,7 +430,7 @@
 
 
         // ─── Declarations Tab ──────────────────────────────────────────
-        function DeclarationsTab({ info, setInfo, onGenerated, restoredData, onRestoredDataUsed }) {
+        function DeclarationsTab({ info, setInfo, onGenerated, onDutiesChanged, restoredData, restoredDutiesMap, onRestoredDataUsed }) {
             const [step, setStep] = useState(1);
             const [xlsxFile, setXlsxFile] = useState(null);
             const [invoiceZip, setInvoiceZip] = useState(null);
@@ -446,7 +446,7 @@
                     setRestoredRows(restoredData);
                     setParsedRows([]);
                     setXlsxFile(null);
-                    setDutiesMap({});
+                    setDutiesMap(restoredDutiesMap || {});
                     setError('');
                     setShowStep3(true);
                     setStep(3);
@@ -560,7 +560,9 @@
                 setGenerating(false);
             };
             const handleDutyChange = (tracking, value) => {
-                setDutiesMap(prev => ({ ...prev, [tracking]: value }));
+                const next = { ...dutiesMap, [tracking]: value };
+                setDutiesMap(next);
+                onDutiesChanged(info, invoiceRows, next);
             };
 
             const uploadPaymentOrder = async (file) => {
@@ -592,7 +594,9 @@
                         }
                         const count = Object.keys(updates).length;
                         if (count) {
-                            setDutiesMap(prev => ({ ...prev, ...updates }));
+                            const next = { ...dutiesMap, ...updates };
+                            setDutiesMap(next);
+                            onDutiesChanged(info, invoiceRows, next);
                             setPaymentOrderSuccess(`✓ ${count} duties auto-filled from payment order`);
                         } else {
                             setError('No payment order references matched customer tracking numbers.');
@@ -645,7 +649,7 @@
                         a.download = 'batch_invoices.zip';
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
-                        if (!usingSavedRows) onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length, parsedRows);
+                        if (!usingSavedRows) onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length, parsedRows, dutiesMap);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Failed to generate invoices');
@@ -990,46 +994,44 @@
                 }
             };
 
-            const emailCustomer = () => {
-                if (!form.email || !form.customer_name) {
+            const emailCustomer = (details) => {
+                if (!details.email || !details.customer_name) {
                     alert('Please fill in both the Email and Customer Name fields before sending an email.');
                     return;
                 }
-
-                const serviceFee = (parseFloat(form.customs_duties) || 0) * 0.05;
-                const totalECVal = (parseFloat(form.customs_duties) || 0) + 10.00 + serviceFee;
+                const serviceFee = (parseFloat(details.customs_duties) || 0) * 0.05;
+                const totalECVal = (parseFloat(details.customs_duties) || 0) + 10.00 + serviceFee;
                 const totalUSDVal = totalECVal / 2.6882;
-
-                const subject = encodeURIComponent(`Your Package Is Ready for Collection - ${form.customer_name}`);
+                const subject = encodeURIComponent(`Your Package Is Ready for Collection - ${details.customer_name}`);
                 const body = encodeURIComponent(
 `SAFE CARGO SERVICES
 Sandy Ground, Anguilla  |  Tel: (264) 498-0194
 CUSTOMS CLEARANCE INVOICE
 ---------------------------------------------
 
-Dear ${form.customer_name},
+Dear ${details.customer_name},
 
 We are pleased to inform you that your package has arrived and is now ready for collection at the Safe Cargo Services Warehouse, located in Sandy Ground, Anguilla — just before the football field.
 
 CUSTOMER DETAILS
 ---------------------------------------------
-Name:     ${form.customer_name}
-Address:  ${form.address}
-Tel:      ${form.telephone}
-Email:    ${form.email}
+Name:     ${details.customer_name}
+Address:  ${details.address}
+Tel:      ${details.telephone}
+Email:    ${details.email}
 
 SHIPMENT DETAILS
 ---------------------------------------------
-Tracking Number:    ${form.tracking_number}
-Date of Arrival:    ${form.arrival_date}
-Shipper:            ${form.shipper_name}
-Invoice #:          ${form.shipper_invoice_number}
-Description:        ${form.description}
-Total Order Value:  US$ ${(parseFloat(form.total_order_value) || 0).toFixed(2)}
+Tracking Number:    ${details.tracking_number}
+Date of Arrival:    ${details.arrival_date}
+Shipper:            ${details.shipper_name}
+Invoice #:          ${details.shipper_invoice_number}
+Description:        ${details.description}
+Total Order Value:  US$ ${(parseFloat(details.total_order_value) || 0).toFixed(2)}
 
 CHARGES DUE (payable upon collection)
 ---------------------------------------------
-Customs Duties:                      EC$ ${(parseFloat(form.customs_duties) || 0).toFixed(2)}
+Customs Duties:                      EC$ ${(parseFloat(details.customs_duties) || 0).toFixed(2)}
 AASPA Fee:                           EC$ 10.00
 Import Clearance Service Fee (5%):   EC$ ${serviceFee.toFixed(2)}
 ---------------------------------------------
@@ -1053,10 +1055,8 @@ Safe Cargo Services
 Sandy Ground, Anguilla
 Customs Declarant Code: DC2114`
                 );
+                window.location.href = `mailto:${details.email}?subject=${subject}&body=${body}`;
 
-                window.location.href = `mailto:${form.email}?subject=${subject}&body=${body}`;
-
-                // Show brief success toast
                 const toast = document.createElement('div');
                 toast.textContent = 'Email client opened ✓';
                 toast.style.cssText = 'position:fixed;bottom:30px;right:30px;background:#8B0000;color:#F39C12;padding:12px 24px;border-radius:8px;font-weight:bold;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
@@ -1064,9 +1064,91 @@ Customs Declarant Code: DC2114`
                 setTimeout(() => toast.remove(), 3000);
             };
 
+            const [arrivalDate, setArrivalDate] = useState('');
+            const [customers, setCustomers] = useState(null);
+            const [individualOpen, setIndividualOpen] = useState(false);
+
+            const loadCustomers = () => {
+                let entries;
+                try {
+                    entries = JSON.parse(localStorage.getItem('scs_history') || '[]');
+                } catch (e) {
+                    entries = [];
+                }
+                const entry = Array.isArray(entries) ? entries.find(item => Array.isArray(item.rows) && item.rows.length > 0) : null;
+                setCustomers(entry ? [...entry.rows].sort((a, b) =>
+                    String(a.buyer_name || '').trim().split(/\s+/)[0].localeCompare(
+                        String(b.buyer_name || '').trim().split(/\s+/)[0], undefined, { sensitivity: 'base' })
+                    || String(a.buyer_name || '').localeCompare(String(b.buyer_name || ''), undefined, { sensitivity: 'base' })
+                ).map(row => ({ row, duties: entry.dutiesMap?.[row.tracking_number] ?? 0 })) : []);
+            };
+
+            const customerDetails = (row, duties) => ({
+                tracking_number: row.tracking_number || '',
+                customer_name: row.buyer_name || '',
+                address: [row.buyer_address1, row.buyer_city, row.buyer_state].filter(Boolean).join(', '),
+                telephone: row.buyer_phone || '',
+                email: row.buyer_email || '',
+                arrival_date: arrivalDate,
+                customs_duties: duties || 0,
+                description: String(row.items_description || '').replace(/\]\s*\[/g, ', ').replace(/[\[\]]/g, '').trim(),
+                shipper_name: row.shipper || '',
+                shipper_invoice_number: row.cn35_awb || '',
+                total_order_value: row.fob_verified || 0
+            });
+
+            const selectCustomer = (row, duties) => {
+                setForm(customerDetails(row, duties));
+                setIndividualOpen(true);
+            };
+
             return (
-                <div className="fade-in">
+                <div className="fade-in space-y-6">
                     <div className="card-warm rounded-lg p-6">
+                        <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">STEP 1 — DATE OF ARRIVAL</h3>
+                        <div className="flex flex-wrap items-end gap-4">
+                            <div>
+                                <label htmlFor="customer-arrival-date" className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
+                                <input id="customer-arrival-date" type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)}
+                                    className="input-warm px-4 py-2 border rounded-lg" />
+                            </div>
+                            <button onClick={loadCustomers} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep">Load Customers</button>
+                        </div>
+                    </div>
+                    {customers !== null && (
+                        <div className="card-warm rounded-lg p-6">
+                            <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">STEP 2 — CUSTOMERS</h3>
+                            {customers.length === 0 ? <p role="status" className="text-gray-600">No session data found. Please generate declarations first.</p> : (
+                                <div className="overflow-x-auto rounded-lg border border-asian-gold-dark/20">
+                                    <table className="w-full text-sm">
+                                        <thead className="table-header-red"><tr>
+                                            <th scope="col" className="px-3 py-2 text-left">Customer Name</th>
+                                            <th scope="col" className="px-3 py-2 text-left">Tracking #</th>
+                                            <th scope="col" className="px-3 py-2 text-left">Description</th>
+                                            <th scope="col" className="px-3 py-2 text-center">📧</th>
+                                        </tr></thead>
+                                        <tbody>{customers.map(({ row, duties }, i) => (
+                                            <tr key={`${row.tracking_number}-${i}`} tabIndex={0} onClick={() => selectCustomer(row, duties)}
+                                                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectCustomer(row, duties); } }}
+                                                className="table-row-alt cursor-pointer hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-asian-gold"
+                                                aria-label={`Select ${row.buyer_name || 'customer'} for individual invoice`}>
+                                                <td className="px-3 py-2">{row.buyer_name || '—'}</td>
+                                                <td className="px-3 py-2 font-mono text-xs">{row.tracking_number || '—'}</td>
+                                                <td className="px-3 py-2" title={row.items_description || ''}>{String(row.items_description || '').length > 40 ? String(row.items_description).slice(0, 40) + '…' : (row.items_description || '—')}</td>
+                                                <td className="px-3 py-2 text-center"><button type="button" title={`Email ${row.buyer_name || 'customer'}`}
+                                                    aria-label={`Email ${row.buyer_name || 'customer'}`}
+                                                    onClick={(e) => { e.stopPropagation(); emailCustomer(customerDetails(row, duties)); }}
+                                                    className="text-asian-maroon hover:text-asian-red p-2 rounded focus:outline-none focus:ring-2 focus:ring-asian-gold">📧</button></td>
+                                            </tr>
+                                        ))}</tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <details open={individualOpen} onToggle={(e) => setIndividualOpen(e.currentTarget.open)} className="card-warm rounded-lg p-6">
+                        <summary className="section-header text-lg font-semibold text-asian-maroon cursor-pointer">Generate Individual Invoice PDF</summary>
+                        <div className="mt-6">
                         {/* Customer Details Section */}
                         <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">
                             <i className="fas fa-user text-asian-gold mr-2"></i>Customer Details
@@ -1168,14 +1250,15 @@ Customs Declarant Code: DC2114`
 
                         {/* Generate Button */}
                         <div className="mt-6 flex justify-end gap-3">
-                            <button onClick={emailCustomer} className="px-6 py-2.5 bg-asian-gold text-asian-maroon font-bold rounded-lg hover:opacity-90 flex items-center transition-colors">
+                            <button onClick={() => emailCustomer(form)} className="px-6 py-2.5 bg-asian-gold text-asian-maroon font-bold rounded-lg hover:opacity-90 flex items-center transition-colors">
                                 <i className="fas fa-envelope mr-2"></i>📧 Email Customer
                             </button>
                             <button onClick={generateInvoice} disabled={generating} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep flex items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                 <i className={generating ? "fas fa-spinner fa-spin mr-2" : "fas fa-file-pdf mr-2"}></i>{generating ? 'Generating...' : 'Download Invoice PDF'}
                             </button>
                         </div>
-                    </div>
+                        </div>
+                    </details>
                 </div>
             );
         }
@@ -1460,6 +1543,8 @@ Customs Declarant Code: DC2114`
             const [decForm, setDecForm] = useState({ master_awb: '', manifest_reference: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [history, setHistory] = useState([]);
             const [restoredDecData, setRestoredDecData] = useState([]);
+            const [restoredDutiesMap, setRestoredDutiesMap] = useState({});
+            const [restoredHistoryId, setRestoredHistoryId] = useState(null);
             
 
             const loadFromLocalStorage = () => {
@@ -1482,7 +1567,7 @@ Customs Declarant Code: DC2114`
                 }
             };
 
-            const handleGenerated = (type, info, spreadsheetName, rowCount, rows = []) => {
+            const handleGenerated = (type, info, spreadsheetName, rowCount, rows = [], dutiesMap = {}) => {
                 const hasWaybills = type === 'Declarations' && history.some(item =>
                     (item.type === 'Waybills' || item.type === 'Waybills + Declarations') &&
                     item.master_awb === info.master_awb && item.spreadsheet_name === spreadsheetName
@@ -1502,6 +1587,7 @@ Customs Declarant Code: DC2114`
                     manifest_reference: info.manifest_reference || '',
                     spreadsheet_name: spreadsheetName,
                     row_count: rowCount,
+                    ...(Object.keys(dutiesMap).length ? { dutiesMap } : {}),
                     rows: rows.map(r => ({
                         tracking_number: r.tracking_number || r['Tracking Number'] || '',
                         buyer_name: r.buyer_name || r['Buyer Name'] || '',
@@ -1518,6 +1604,19 @@ Customs Declarant Code: DC2114`
                 });
             };
 
+            const saveDutiesToHistory = (info, rows, dutiesMap) => {
+                const trackingNumbers = new Set(rows.map(row => row.tracking_number));
+                const index = history.findIndex(entry =>
+                    (!restoredHistoryId || entry.id === restoredHistoryId) &&
+                    (entry.master_awb || '') === (info.master_awb || '') && Array.isArray(entry.rows) &&
+                    entry.rows.some(row => trackingNumbers.has(row.tracking_number))
+                );
+                if (index < 0) return;
+                const next = [...history];
+                next[index] = { ...next[index], dutiesMap };
+                try { localStorage.setItem('scs_history', JSON.stringify(next)); setHistory(next); } catch (e) { /* Storage unavailable. */ }
+            };
+
             const loadDetails = (entry, enterDuties = false) => {
                 const details = {
                     master_awb: entry.master_awb || '',
@@ -1529,9 +1628,12 @@ Customs Declarant Code: DC2114`
                 setDecForm({ ...details, manifest_reference: entry.manifest_reference || '' });
                 if (enterDuties && Array.isArray(entry.rows) && entry.rows.length > 0) {
                     setRestoredDecData(entry.rows);
+                    setRestoredDutiesMap(entry.dutiesMap || {});
+                    setRestoredHistoryId(entry.id);
                     setActiveTab('declarations');
                 } else {
                     setRestoredDecData([]);
+                    setRestoredHistoryId(null);
                     setActiveTab('waybills');
                 }
             };
@@ -1552,10 +1654,15 @@ Customs Declarant Code: DC2114`
                             SCS-MAILUSA
                         </h1>
                         <p className="text-yellow-100/80 mt-2 text-sm tracking-wide">Safe Cargo Services · Anguilla</p>
-                        <a href="/portal" target="_blank" rel="noopener"
-                            title="Warehouse / Accounting Portal"
+                        <a href="/portal?role=warehouse" target="_blank" rel="noopener"
+                            title="Warehouse Portal"
                             className="absolute top-4 left-4 text-xs border border-asian-gold/40 text-asian-gold px-3 py-1.5 rounded-lg hover:bg-black/20 flex items-center transition-colors">
-                            <i className="fas fa-warehouse mr-1.5"></i>Portal
+                            <i className="fas fa-warehouse mr-1.5"></i>Warehouse
+                        </a>
+                        <a href="/portal?role=accounting" target="_blank" rel="noopener"
+                            title="Accounting Portal"
+                            className="absolute top-14 left-4 text-xs border border-asian-gold/40 text-asian-gold px-3 py-1.5 rounded-lg hover:bg-black/20 flex items-center transition-colors">
+                            <i className="fas fa-calculator mr-1.5"></i>Accounting
                         </a>
                         <button
                             onClick={onSignOut}
@@ -1604,12 +1711,12 @@ Customs Declarant Code: DC2114`
                             ? 'Generate a professional cargo manifest PDF from your shipment spreadsheet.'
                             : activeTab === 'history'
                             ? 'Saved sessions with customer rows can create invoices without re-uploading the spreadsheet.'
-                            : 'Generate a printable customs clearance invoice for your customer.'}
+                            : 'Load saved customers, email collection notices, or generate an individual invoice PDF.'}
                     </div>
 
                     {/* Tab Content */}
                     {activeTab === 'waybills' ? <WaybillsTab info={waybillForm} setInfo={setWaybillForm} onGenerated={handleGenerated} />
-                        : activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} />
+                        : activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} restoredDutiesMap={restoredDutiesMap} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} onDutiesChanged={saveDutiesToHistory} />
                         : activeTab === 'manifest' ? <ManifestTab />
                         : activeTab === 'history' ? <HistoryTab history={history} onLoad={loadDetails} onDelete={deleteHistory} onClear={clearHistory} />
                         : <CustomerInvoiceTab />}
