@@ -444,6 +444,23 @@ async def accounting_daily_report(date: Optional[str] = None, user: dict = Depen
     return {"date": d.isoformat(), "payments": rows, **_summarise(rows)}
 
 
+def _monthly_rows(year: int, month: int) -> list:
+    from calendar import monthrange
+    last_day = monthrange(year, month)[1]
+    start = date(year, month, 1)
+    end = date(year, month, last_day)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT tracking_number, buyer_name, customs_duties, clearance_fee,
+                       aaspa_security_fee, total_due, date_paid, payment_method
+                FROM shipments
+                WHERE paid = TRUE AND date_paid BETWEEN %s AND %s
+                ORDER BY buyer_name ASC
+            """, (start, end))
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
 def _unclaimed_rows(days: int) -> list:
     _require_db()
     cutoff = today_ast() - timedelta(days=days)
@@ -457,6 +474,22 @@ def _unclaimed_rows(days: int) -> list:
     rows.sort(key=lambda r: r.get("days_outstanding", 0), reverse=True)
     return rows
 
+
+@router.get("/accounting/monthly-report")
+async def accounting_monthly_report(year: int = Query(...), month: int = Query(...), user: dict = Depends(accounting_user)):
+    """Return all paid shipments for a given month."""
+    rows = _monthly_rows(year, month)
+    total = sum(r["total_due"] for r in rows)
+    subtotals = {}
+    for r in rows:
+        pm = r.get("payment_method") or "unknown"
+        subtotals[pm] = subtotals.get(pm, 0) + r["total_due"]
+    return {"year": year, "month": month, "rows": rows, "total": total, "subtotals": subtotals, "count": len(rows)}
+
+@router.get("/accounting/monthly-report/pdf")
+async def accounting_monthly_report_pdf(year: int = Query(...), month: int = Query(...), user: dict = Depends(accounting_user)):
+    rows = _monthly_rows(year, month)
+    return _pdf_response(build_monthly_report_pdf(year, month, rows), f"SCS_Monthly_Report_{year}_{month:02d}.pdf")
 
 @router.get("/accounting/unclaimed")
 async def accounting_unclaimed(days: int = Query(14, ge=0), user: dict = Depends(accounting_user)):
@@ -572,6 +605,80 @@ def build_daily_report_pdf(d: date, rows: list) -> bytes:
     doc.build(el, onFirstPage=_footer, onLaterPages=_footer)
     return buf.getvalue()
 
+
+def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
+    import calendar as cal_mod
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    styles = getSampleStyleSheet()
+    MAROON = colors.HexColor("#8B0000")
+    GOLD = colors.HexColor("#D4AC0D")
+    CREAM = colors.HexColor("#FAF8F5")
+
+    month_name = cal_mod.month_name[month]
+    elements = []
+    elements.append(Paragraph("SAFE CARGO SERVICES", styles["Title"]))
+    elements.append(Paragraph("Sandy Ground, Anguilla  |  Tel: (264) 498-0194", styles["Normal"]))
+    elements.append(Spacer(1, 4*mm))
+    elements.append(Paragraph(f"MONTHLY CASH REPORT — {month_name.upper()} {year}", styles["Heading2"]))
+    elements.append(Spacer(1, 4*mm))
+
+    headers = ["#", "Tracking #", "Customer", "Duties (EC$)", "5% Fee (EC$)", "AASPA/Sec (EC$)", "Total (EC$)", "Payment Method", "Date Paid"]
+    data = [headers]
+    total = 0
+    subtotals = {}
+    for i, r in enumerate(rows, 1):
+        pm = (r.get("payment_method") or "—").replace("_", " ").title()
+        data.append([
+            str(i),
+            r.get("tracking_number",""),
+            r.get("buyer_name",""),
+            f"{r.get('customs_duties',0):.2f}",
+            f"{r.get('clearance_fee',0):.2f}",
+            f"{r.get('aaspa_security_fee',10):.2f}",
+            f"{r.get('total_due',0):.2f}",
+            pm,
+            str(r.get("date_paid",""))
+        ])
+        total += r.get("total_due", 0)
+        subtotals[pm] = subtotals.get(pm, 0) + r.get("total_due", 0)
+
+    # Totals row
+    data.append(["", "", "TOTAL", "", "", "", f"{total:.2f}", "", ""])
+
+    col_widths = [15, 90, 90, 65, 60, 70, 65, 85, 65]
+    t = Table(data, colWidths=[w*mm for w in col_widths], repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), MAROON),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,-1), 7),
+        ("ROWBACKGROUNDS", (0,1), (-1,-2), [colors.white, CREAM]),
+        ("BACKGROUND", (0,-1), (-1,-1), GOLD),
+        ("FONTNAME", (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("GRID", (0,0), (-1,-1), 0.3, colors.grey),
+        ("ALIGN", (3,0), (6,-1), "RIGHT"),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 4*mm))
+
+    # Subtotals by payment method
+    sub_lines = "  |  ".join(f"{k}: EC${v:.2f}" for k, v in subtotals.items())
+    elements.append(Paragraph(f"<b>Subtotals by Payment Method:</b> {sub_lines}", styles["Normal"]))
+    elements.append(Spacer(1, 2*mm))
+    elements.append(Paragraph(f"<b>Grand Total: EC${total:.2f}  (US${total/2.6882:.2f})</b>", styles["Normal"]))
+    elements.append(Spacer(1, 6*mm))
+    elements.append(Paragraph("Prepared by Accounting — Safe Cargo Services", styles["Normal"]))
+
+    doc.build(elements)
+    buf.seek(0)
+    return buf.read()
 
 def build_unclaimed_pdf(days: int, rows: list) -> bytes:
     buf = io.BytesIO()
