@@ -482,7 +482,7 @@
                 e.preventDefault();
                 e.currentTarget.classList && e.currentTarget.classList.remove('dragover');
                 const file = e.dataTransfer?.files[0] || e.target.files?.[0];
-                if (file && file.name.toLowerCase().endsWith('.zip')) {
+                if (file && (file.name.toLowerCase().endsWith('.zip') || file.name.toLowerCase().endsWith('.pdf'))) {
                     setInvoiceZip(file);
                     setError('');
                 } else if (file) {
