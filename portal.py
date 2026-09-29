@@ -555,6 +555,20 @@ async def accounting_process_payment_order(pdf_file: UploadFile = File(...), use
     return {"success": True, "processed": processed, "unmatched": unmatched}
 
 
+@router.delete("/accounting/shipment/{tracking}")
+async def accounting_delete_shipment(tracking: str, user: dict = Depends(accounting_user)):
+    """Remove an unpaid shipment (e.g. a mistaken import). Paid records cannot be deleted."""
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM shipments WHERE tracking_number = %s AND paid = FALSE", (tracking.strip(),))
+        deleted = cur.rowcount
+        cur.execute("DELETE FROM invoices WHERE tracking_number = %s", (tracking.strip(),))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No unpaid shipment with that tracking number.")
+    return {"success": True}
+
+
 class MarkPaidRequest(BaseModel):
     tracking_number: str
     date_paid: Optional[str] = None
