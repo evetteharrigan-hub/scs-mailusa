@@ -1912,16 +1912,23 @@ def generate_customer_invoice_pdf(
 async def search_customer(q: str = ""):
     if not q.strip():
         return []
+    optional_columns = ("buyer_address", "buyer_phone", "buyer_email", "shipper_name")
     try:
         with portal_module.get_conn() as conn:
             cur = conn.cursor(cursor_factory=portal_module.psycopg2.extras.RealDictCursor)
-            cur.execute("""SELECT tracking_number, buyer_name, buyer_address, buyer_phone,
-                       buyer_email, description, cif_value, date_of_arrival, shipper_name
-                       FROM shipments WHERE buyer_name ILIKE %s
-                       ORDER BY date_of_arrival DESC NULLS LAST, buyer_name, tracking_number
-                       LIMIT 20""", (f"%{q.strip()}%",))
-            return [{**dict(row), "date_of_arrival": row["date_of_arrival"].isoformat()
-                     if row["date_of_arrival"] else None} for row in cur.fetchall()]
+            cur.execute("""SELECT column_name FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'shipments'
+                           AND column_name = ANY(%s)""", (list(optional_columns),))
+            present = {row["column_name"] for row in cur.fetchall()}
+            columns = ", ".join(("tracking_number", "buyer_name", "description", "cif_value",
+                                 "date_of_arrival", "customs_duties") +
+                                tuple(column for column in optional_columns if column in present))
+            cur.execute(f"""SELECT {columns} FROM shipments WHERE buyer_name ILIKE %s
+                           LIMIT 15""", (f"%{q.strip()}%",))
+            return [{**dict(row),
+                     **{column: row.get(column) or "" for column in optional_columns},
+                     "date_of_arrival": row["date_of_arrival"].isoformat()
+                     if row.get("date_of_arrival") else None} for row in cur.fetchall()]
     except Exception as exc:
         print(f"[invoice] Customer search unavailable: {exc}")
         return []
@@ -1954,9 +1961,14 @@ async def save_invoice(invoice: SaveInvoiceRequest):
     duties = invoice.customs_duties
     fee = duties * 0.05
     try:
-        portal_module._require_db()
         with portal_module.get_conn() as conn:
             cur = conn.cursor()
+            cur.execute("""CREATE TABLE IF NOT EXISTS invoices (
+                id SERIAL PRIMARY KEY, tracking_number TEXT, customer_name TEXT,
+                customs_duties REAL, clearance_fee REAL, aaspa_security_fee REAL DEFAULT 10.00,
+                total_ec REAL, total_usd REAL, arrival_date TEXT,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, pdf_data BYTEA
+            )""")
             cur.execute("""INSERT INTO invoices
                 (tracking_number, customer_name, customs_duties, clearance_fee,
                  aaspa_security_fee, total_ec, total_usd, arrival_date, pdf_data)
@@ -1965,11 +1977,9 @@ async def save_invoice(invoice: SaveInvoiceRequest):
                  fee, 10.00, invoice.total_ec, invoice.total_usd, invoice.arrival_date,
                  portal_module.psycopg2.Binary(pdf_bytes)))
             invoice_id = cur.fetchone()[0]
-    except HTTPException:
-        raise
     except Exception as exc:
         print(f"[invoice] Save failed: {exc}")
-        raise HTTPException(status_code=503, detail="Could not save invoice. Database unavailable.") from exc
+        return {"success": False}
     return {"id": invoice_id, "success": True}
 
 
