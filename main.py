@@ -1,4 +1,7 @@
 import io
+import base64
+import binascii
+import math
 import os
 import re
 import zipfile
@@ -1905,6 +1908,90 @@ def generate_customer_invoice_pdf(
     return buffer.read()
 
 
+@app.get("/search-customer")
+async def search_customer(q: str = ""):
+    if not q.strip():
+        return []
+    try:
+        with portal_module.get_conn() as conn:
+            cur = conn.cursor(cursor_factory=portal_module.psycopg2.extras.RealDictCursor)
+            cur.execute("""SELECT tracking_number, buyer_name, buyer_address, buyer_phone,
+                       buyer_email, description, cif_value, date_of_arrival, shipper_name
+                       FROM shipments WHERE buyer_name ILIKE %s
+                       ORDER BY date_of_arrival DESC NULLS LAST, buyer_name, tracking_number
+                       LIMIT 20""", (f"%{q.strip()}%",))
+            return [{**dict(row), "date_of_arrival": row["date_of_arrival"].isoformat()
+                     if row["date_of_arrival"] else None} for row in cur.fetchall()]
+    except Exception as exc:
+        print(f"[invoice] Customer search unavailable: {exc}")
+        return []
+
+
+class SaveInvoiceRequest(BaseModel):
+    tracking_number: str
+    customer_name: str
+    customs_duties: float
+    arrival_date: str
+    total_ec: float
+    total_usd: float
+    pdf_base64: str
+
+
+@app.post("/save-invoice")
+async def save_invoice(invoice: SaveInvoiceRequest):
+    if not invoice.tracking_number.strip() or not invoice.customer_name.strip():
+        raise HTTPException(status_code=422, detail="Tracking number and customer name are required.")
+    if (not all(math.isfinite(value) for value in
+                (invoice.customs_duties, invoice.total_ec, invoice.total_usd))
+            or invoice.customs_duties < 0):
+        raise HTTPException(status_code=422, detail="Invalid invoice amounts.")
+    try:
+        pdf_bytes = base64.b64decode(invoice.pdf_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid PDF data.") from exc
+    if not pdf_bytes.startswith(b"%PDF-"):
+        raise HTTPException(status_code=422, detail="Invalid PDF data.")
+    duties = invoice.customs_duties
+    fee = duties * 0.05
+    try:
+        portal_module._require_db()
+        with portal_module.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""INSERT INTO invoices
+                (tracking_number, customer_name, customs_duties, clearance_fee,
+                 aaspa_security_fee, total_ec, total_usd, arrival_date, pdf_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (invoice.tracking_number.strip(), invoice.customer_name.strip(), duties,
+                 fee, 10.00, invoice.total_ec, invoice.total_usd, invoice.arrival_date,
+                 portal_module.psycopg2.Binary(pdf_bytes)))
+            invoice_id = cur.fetchone()[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[invoice] Save failed: {exc}")
+        raise HTTPException(status_code=503, detail="Could not save invoice. Database unavailable.") from exc
+    return {"id": invoice_id, "success": True}
+
+
+@app.get("/invoice-pdf/{invoice_id}")
+async def invoice_pdf(invoice_id: int):
+    try:
+        portal_module._require_db()
+        with portal_module.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT pdf_data FROM invoices WHERE id = %s", (invoice_id,))
+            row = cur.fetchone()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[invoice] PDF fetch failed: {exc}")
+        raise HTTPException(status_code=503, detail="Database unavailable.") from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    return StreamingResponse(io.BytesIO(bytes(row[0])), media_type="application/pdf",
+                             headers={"Content-Disposition": f'inline; filename="SCS_Invoice_{invoice_id}.pdf"'})
+
+
 @app.post("/generate-customer-invoice")
 async def generate_customer_invoice(
     tracking_number: str = Form(...),
@@ -2115,11 +2202,17 @@ async def parse_payment_order(pdf_file: UploadFile = File(...)):
 
 IMPORT_SHIPMENTS_SQL = """
 INSERT INTO shipments (tracking_number, buyer_name, description, date_of_arrival, cif_value,
-    customs_duties, clearance_fee, aaspa_security_fee, total_due)
+    customs_duties, clearance_fee, aaspa_security_fee, total_due,
+    buyer_address, buyer_phone, buyer_email, shipper_name)
 VALUES (%(tracking_number)s, %(buyer_name)s, %(description)s, %(date_of_arrival)s, %(cif_value)s,
-    %(customs_duties)s, %(clearance_fee)s, %(aaspa_security_fee)s, %(total_due)s)
+    %(customs_duties)s, %(clearance_fee)s, %(aaspa_security_fee)s, %(total_due)s,
+    %(buyer_address)s, %(buyer_phone)s, %(buyer_email)s, %(shipper_name)s)
 ON CONFLICT (tracking_number) DO UPDATE SET
     buyer_name = EXCLUDED.buyer_name,
+    buyer_address = COALESCE(NULLIF(EXCLUDED.buyer_address, ''), shipments.buyer_address),
+    buyer_phone = COALESCE(NULLIF(EXCLUDED.buyer_phone, ''), shipments.buyer_phone),
+    buyer_email = COALESCE(NULLIF(EXCLUDED.buyer_email, ''), shipments.buyer_email),
+    shipper_name = COALESCE(NULLIF(EXCLUDED.shipper_name, ''), shipments.shipper_name),
     description = EXCLUDED.description,
     date_of_arrival = EXCLUDED.date_of_arrival,
     cif_value = EXCLUDED.cif_value,
@@ -2173,6 +2266,11 @@ async def import_shipments(
         records[tracking] = {
             "tracking_number": tracking,
             "buyer_name": str(row.get("buyer_name") or "").strip(),
+            "buyer_address": ", ".join(str(row.get(k) or "").strip() for k in
+                                       ("buyer_address1", "buyer_city", "buyer_state") if row.get(k)),
+            "buyer_phone": str(row.get("buyer_phone") or "").strip(),
+            "buyer_email": str(row.get("buyer_email") or "").strip(),
+            "shipper_name": str(row.get("shipper") or "").strip(),
             "description": portal_module._describe(row.get("items_description")),
             "date_of_arrival": arrival,
             "cif_value": round(portal_module._num(row.get("cif_verified")), 2),
@@ -2644,5 +2742,6 @@ async def portal():
 
 
 app.include_router(portal_module.router)
+app.include_router(portal_module.history_router)
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

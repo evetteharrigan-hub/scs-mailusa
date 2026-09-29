@@ -928,6 +928,206 @@
 
 
 
+        function ManualInvoiceSection({ saveToHistory }) {
+            const [searchQuery, setSearchQuery] = useState('');
+            const [matches, setMatches] = useState([]);
+            const [customerRows, setCustomerRows] = useState([]);
+            const [searched, setSearched] = useState(false);
+            const [selected, setSelected] = useState(null);
+            const [searching, setSearching] = useState(false);
+            const [form, setForm] = useState(null);
+            const [processing, setProcessing] = useState(false);
+            const [savedId, setSavedId] = useState(null);
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                if (selected || !searchQuery.trim()) {
+                    setMatches([]);
+                    setSearching(false);
+                    return;
+                }
+                const controller = new AbortController();
+                const timer = setTimeout(async () => {
+                    setSearching(true);
+                    try {
+                        const response = await fetch(`/search-customer?q=${encodeURIComponent(searchQuery.trim())}`, { signal: controller.signal });
+                        if (!response.ok) throw new Error('Customer search failed.');
+                        setMatches(await response.json());
+                        setSearched(true);
+                        setError('');
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            setMatches([]);
+                            setSearched(true);
+                            setError(err.message);
+                        }
+                    } finally {
+                        if (!controller.signal.aborted) setSearching(false);
+                    }
+                }, 300);
+                return () => { clearTimeout(timer); controller.abort(); };
+            }, [searchQuery, selected]);
+
+            const choose = (row) => {
+                setCustomerRows(prev => prev.some(item => item.tracking_number === row.tracking_number)
+                    ? prev : matches.filter(item => item.buyer_name?.toLowerCase() === row.buyer_name?.toLowerCase()));
+                setSelected(row);
+                setSearchQuery(row.buyer_name || '');
+                setMatches([]);
+                setSavedId(null);
+                setError('');
+                setForm({
+                    tracking_number: row.tracking_number || '',
+                    customer_name: row.buyer_name || '',
+                    address: row.buyer_address || '',
+                    telephone: row.buyer_phone || '',
+                    email: row.buyer_email || '',
+                    arrival_date: (row.date_of_arrival || '').slice(0, 10),
+                    description: row.description || '',
+                    shipper_name: row.shipper_name || '',
+                    shipper_invoice_number: '',
+                    total_order_value: row.cif_value || 0,
+                    customs_duties: ''
+                });
+            };
+            const change = (field, value) => {
+                setForm(prev => ({ ...prev, [field]: value }));
+                setSavedId(null);
+                setError('');
+            };
+            const customerMatches = selected ? customerRows : [];
+            const duties = Number(form?.customs_duties || 0);
+            const clearance = duties * 0.05;
+            const totalEC = duties + clearance + 10;
+            const totalUSD = totalEC / 2.6882;
+
+            const process = async (event) => {
+                event.preventDefault();
+                if (!form || !form.tracking_number || !form.customer_name || form.customs_duties === '' ||
+                    !Number.isFinite(duties) || duties < 0) {
+                    setError('Select a shipment and enter valid customs duties.');
+                    return;
+                }
+                setProcessing(true);
+                setError('');
+                try {
+                    const data = new FormData();
+                    Object.entries(form).forEach(([key, value]) => data.append(key, String(value ?? '')));
+                    const generated = await fetch('/generate-customer-invoice', { method: 'POST', body: data });
+                    if (!generated.ok) throw new Error('Could not generate invoice PDF.');
+                    const pdf = await generated.blob();
+                    const pdfBase64 = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(String(reader.result).split(',')[1]);
+                        reader.onerror = () => reject(new Error('Could not read invoice PDF.'));
+                        reader.readAsDataURL(pdf);
+                    });
+                    const saved = await fetch('/save-invoice', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            tracking_number: form.tracking_number, customer_name: form.customer_name,
+                            customs_duties: duties, arrival_date: form.arrival_date,
+                            total_ec: Number(totalEC.toFixed(2)), total_usd: Number(totalUSD.toFixed(2)),
+                            pdf_base64: pdfBase64
+                        })
+                    });
+                    if (!saved.ok) throw new Error('Could not save invoice. Please try again.');
+                    const record = await saved.json();
+                    setSavedId(record.id);
+                    await saveToHistory({
+                        id: `inv-${record.id}`, date: new Date().toLocaleString(), type: 'Customer Invoice',
+                        master_awb: form.tracking_number, carrier_name: form.shipper_name,
+                        spreadsheet_name: `${form.customer_name} — ${form.tracking_number}`, row_count: 1,
+                        invoiceFormData: { ...form }
+                    });
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            return (
+                <details className="card-warm rounded-lg p-6 border-l-4 border-asian-gold">
+                    <summary className="section-header text-lg font-semibold text-asian-maroon cursor-pointer">Create Invoice Manually</summary>
+                    <div className="mt-5 space-y-5">
+                        <div className="relative">
+                            <label htmlFor="manual-customer-search" className="block text-sm font-medium text-asian-charcoal mb-1">Search customer</label>
+                            <input id="manual-customer-search" type="search" autoComplete="off" placeholder="Type customer name..."
+                                value={searchQuery} onChange={(e) => {
+                                    setSearchQuery(e.target.value); setSelected(null); setForm(null);
+                                    setMatches([]); setCustomerRows([]); setSearched(false); setSavedId(null); setError('');
+                                }} className="input-warm w-full px-4 py-2 border rounded-lg" />
+                            {searching && <p role="status" className="text-sm text-gray-500 mt-1">Searching...</p>}
+                            {!selected && matches.length > 0 && (
+                                <ul className="absolute z-20 w-full bg-white border border-asian-gold rounded-lg shadow-lg max-h-52 overflow-y-auto" aria-label="Matching customers">
+                                    {matches.map(row => <li key={row.tracking_number}>
+                                        <button type="button" onClick={() => choose(row)} className="block w-full text-left px-4 py-2 text-asian-maroon hover:bg-yellow-50 focus:bg-yellow-50">
+                                            {row.buyer_name} — {row.tracking_number}
+                                        </button>
+                                    </li>)}
+                                </ul>
+                            )}
+                            {!selected && searched && searchQuery.trim() && !searching && matches.length === 0 &&
+                                <p className="text-sm text-gray-500 mt-1">No matching customers found.</p>}
+                        </div>
+                        {form && <form onSubmit={process} className="space-y-5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="manual-customer-name" className="block text-sm font-medium text-asian-charcoal mb-1">Customer Name</label>
+                                    <input id="manual-customer-name" value={form.customer_name} readOnly className="w-full px-4 py-2 border rounded-lg bg-gray-100" />
+                                </div>
+                                <div>
+                                    <label htmlFor="manual-tracking" className="block text-sm font-medium text-asian-charcoal mb-1">Tracking #</label>
+                                    {customerMatches.length > 1 ? <select id="manual-tracking" value={form.tracking_number}
+                                        onChange={(e) => choose(customerMatches.find(row => row.tracking_number === e.target.value))}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg">
+                                        {customerMatches.map(row => <option key={row.tracking_number} value={row.tracking_number}>{row.tracking_number}</option>)}
+                                    </select> : <input id="manual-tracking" value={form.tracking_number} readOnly className="w-full px-4 py-2 border rounded-lg bg-gray-100" />}
+                                </div>
+                                <div>
+                                    <label htmlFor="manual-arrival" className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
+                                    <input id="manual-arrival" type="date" value={form.arrival_date} onChange={(e) => change('arrival_date', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label htmlFor="manual-duties" className="block text-sm font-medium text-asian-charcoal mb-1">Customs Duties (EC$)</label>
+                                    <input id="manual-duties" type="number" min="0" step="0.01" required value={form.customs_duties}
+                                        onChange={(e) => change('customs_duties', e.target.value)} placeholder="Enter amount from ASYCUDA"
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label htmlFor="manual-description" className="block text-sm font-medium text-asian-charcoal mb-1">Description</label>
+                                    <textarea id="manual-description" rows="2" value={form.description} onChange={(e) => change('description', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-asian-gold/30 pt-4">
+                                {[
+                                    ['Import Clearance Fee (EC$)', clearance.toFixed(2)],
+                                    ['AASPA/Security Fee (EC$)', '10.00'],
+                                    ['Total EC$', totalEC.toFixed(2)],
+                                    ['Total US$', totalUSD.toFixed(2)]
+                                ].map(([label, value]) => <div key={label}>
+                                    <label className="block text-sm font-medium text-asian-maroon mb-1">{label}</label>
+                                    <input aria-label={label} value={value} readOnly className="w-full px-4 py-2 border border-asian-gold rounded-lg bg-yellow-50 text-asian-maroon font-bold" />
+                                </div>)}
+                            </div>
+                            <button type="submit" disabled={processing} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep disabled:opacity-50">
+                                {processing ? 'Processing...' : 'Process Invoice'}
+                            </button>
+                            {savedId !== null && <div role="status" className="flex flex-wrap items-center gap-3 text-asian-maroon font-semibold">
+                                <span>✓ Invoice saved</span>
+                                <a href={`/invoice-pdf/${savedId}`} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-asian-maroon text-asian-gold rounded-lg">Open PDF</a>
+                                <a href={`/invoice-pdf/${savedId}?print=true`} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-asian-maroon text-asian-gold rounded-lg">Print</a>
+                            </div>}
+                        </form>}
+                        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                    </div>
+                </details>
+            );
+        }
+
         // ─── Customer Invoice Tab ──────────────────────────────────────
         function CustomerInvoiceTab({ history, historyLoading, saveToHistory }) {
             const [form, setForm] = useState({
@@ -1170,6 +1370,7 @@ Sandy Ground, Anguilla`
                         </div>
                     )}
                     {emailWarning && <p role="status" className="text-sm text-asian-maroon bg-yellow-50 border border-asian-gold rounded-lg px-4 py-2">{emailWarning}</p>}
+                    <ManualInvoiceSection saveToHistory={saveToHistory} />
                     <details open={individualOpen} onToggle={(e) => setIndividualOpen(e.currentTarget.open)} className="card-warm rounded-lg p-6">
                         <summary className="section-header text-lg font-semibold text-asian-maroon cursor-pointer">Generate Individual Invoice PDF</summary>
                         <div className="mt-6">

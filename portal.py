@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS shipments (
     id SERIAL PRIMARY KEY,
     tracking_number TEXT UNIQUE NOT NULL,
     buyer_name TEXT,
+    buyer_address TEXT,
+    buyer_phone TEXT,
+    buyer_email TEXT,
+    shipper_name TEXT,
     description TEXT,
     date_of_arrival DATE,
     cif_value REAL DEFAULT 0,
@@ -108,7 +112,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     spreadsheet_name TEXT,
     row_count INTEGER DEFAULT 0,
     "rows" JSONB,
-    duties_map JSONB
+    duties_map JSONB,
+    invoice_form_data JSONB
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+    id SERIAL PRIMARY KEY,
+    tracking_number TEXT,
+    customer_name TEXT,
+    customs_duties REAL,
+    clearance_fee REAL,
+    aaspa_security_fee REAL DEFAULT 10.00,
+    total_ec REAL,
+    total_usd REAL,
+    arrival_date TEXT,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    pdf_data BYTEA
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -130,6 +149,9 @@ def init_db() -> bool:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(SCHEMA_SQL)
+            for column in ("buyer_address", "buyer_phone", "buyer_email", "shipper_name"):
+                cur.execute(f"ALTER TABLE shipments ADD COLUMN IF NOT EXISTS {column} TEXT")
+            cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS invoice_form_data JSONB")
             # Migrate older schema that had two separate $10 fees -> one field
             cur.execute("""
                 SELECT column_name FROM information_schema.columns
@@ -229,13 +251,19 @@ def _row_to_json(r: dict) -> dict:
 
 UPSERT_SQL = """
 INSERT INTO shipments (tracking_number, buyer_name, description, date_of_arrival, cif_value,
-    customs_duties, clearance_fee, aaspa_security_fee, total_due, manifest_reference, voyage_number)
+    customs_duties, clearance_fee, aaspa_security_fee, total_due, manifest_reference, voyage_number,
+    buyer_address, buyer_phone, buyer_email, shipper_name)
 VALUES (%(tracking_number)s, %(buyer_name)s, %(description)s, %(date_of_arrival)s, %(cif_value)s,
     %(customs_duties)s, %(clearance_fee)s, %(aaspa_security_fee)s, %(total_due)s,
-    %(manifest_reference)s, %(voyage_number)s)
+    %(manifest_reference)s, %(voyage_number)s, %(buyer_address)s, %(buyer_phone)s,
+    %(buyer_email)s, %(shipper_name)s)
 ON CONFLICT (tracking_number) DO UPDATE SET
     buyer_name = COALESCE(NULLIF(EXCLUDED.buyer_name, ''), shipments.buyer_name),
     description = COALESCE(NULLIF(EXCLUDED.description, ''), shipments.description),
+    buyer_address = COALESCE(NULLIF(EXCLUDED.buyer_address, ''), shipments.buyer_address),
+    buyer_phone = COALESCE(NULLIF(EXCLUDED.buyer_phone, ''), shipments.buyer_phone),
+    buyer_email = COALESCE(NULLIF(EXCLUDED.buyer_email, ''), shipments.buyer_email),
+    shipper_name = COALESCE(NULLIF(EXCLUDED.shipper_name, ''), shipments.shipper_name),
     date_of_arrival = COALESCE(EXCLUDED.date_of_arrival, shipments.date_of_arrival),
     cif_value = CASE WHEN EXCLUDED.cif_value > 0 THEN EXCLUDED.cif_value ELSE shipments.cif_value END,
     customs_duties = CASE WHEN EXCLUDED.customs_duties > 0 THEN EXCLUDED.customs_duties ELSE shipments.customs_duties END,
@@ -262,6 +290,11 @@ def upsert_shipments(rows: list, arrival_date: str = "", duties_map: Optional[di
         rec = {
             "tracking_number": tracking,
             "buyer_name": str(row.get("buyer_name") or "").strip(),
+            "buyer_address": ", ".join(str(row.get(k) or "").strip() for k in
+                                       ("buyer_address1", "buyer_city", "buyer_state") if row.get(k)),
+            "buyer_phone": str(row.get("buyer_phone") or "").strip(),
+            "buyer_email": str(row.get("buyer_email") or "").strip(),
+            "shipper_name": str(row.get("shipper") or "").strip(),
             "description": _describe(row.get("items_description")),
             "date_of_arrival": arrival,
             "cif_value": round(_num(row.get("cif_verified")), 2),
@@ -324,7 +357,7 @@ async def portal_login(username: str = Form(...), password: str = Form(...)):
 
 HISTORY_COLS = """id, session_date AS "date", type, master_awb, voyage_number,
     date_of_departure, carrier_name, manifest_reference, spreadsheet_name,
-    row_count, "rows", duties_map AS "dutiesMap"""
+    row_count, "rows", duties_map AS "dutiesMap", invoice_form_data AS "invoiceFormData"""
 
 
 @history_router.post("")
@@ -342,8 +375,8 @@ async def save_history(entry: dict = Body(...)):
         cur.execute(f"""
             INSERT INTO sessions (id, session_date, type, master_awb, voyage_number,
                 date_of_departure, carrier_name, manifest_reference, spreadsheet_name,
-                row_count, "rows", duties_map)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                row_count, "rows", duties_map, invoice_form_data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 session_date = EXCLUDED.session_date, type = EXCLUDED.type,
                 master_awb = EXCLUDED.master_awb, voyage_number = EXCLUDED.voyage_number,
@@ -352,7 +385,8 @@ async def save_history(entry: dict = Body(...)):
                 manifest_reference = EXCLUDED.manifest_reference,
                 spreadsheet_name = EXCLUDED.spreadsheet_name,
                 row_count = EXCLUDED.row_count, "rows" = EXCLUDED."rows",
-                duties_map = EXCLUDED.duties_map
+                duties_map = EXCLUDED.duties_map,
+                invoice_form_data = EXCLUDED.invoice_form_data
             RETURNING {HISTORY_COLS}
         """, (
             entry["id"], entry.get("date"), entry.get("type"), entry.get("master_awb"),
@@ -361,6 +395,7 @@ async def save_history(entry: dict = Body(...)):
             entry.get("spreadsheet_name"), row_count,
             psycopg2.extras.Json(entry.get("rows", [])),
             psycopg2.extras.Json(entry.get("dutiesMap", {})),
+            psycopg2.extras.Json(entry["invoiceFormData"]) if entry.get("invoiceFormData") else None,
         ))
         return dict(cur.fetchone())
 
