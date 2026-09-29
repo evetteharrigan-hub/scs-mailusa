@@ -1078,8 +1078,8 @@ Customs Declarant Code: DC2114`
             };
 
             const customerDetails = (row, duties) => ({
-                tracking_number: row.tracking_number || '',
-                customer_name: row.buyer_name || '',
+                tracking_number: row.tracking_number || row.tracking || '',
+                customer_name: row.buyer_name || row.name || '',
                 address: [row.buyer_address1, row.buyer_city, row.buyer_state].filter(Boolean).join(', '),
                 telephone: row.buyer_phone || '',
                 email: row.buyer_email || '',
