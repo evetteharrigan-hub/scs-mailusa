@@ -2744,13 +2744,12 @@ async def health_db():
     result = {"db_url_set": db_url != "NOT SET", "db_url_prefix": db_url[:30] if db_url != "NOT SET" else "N/A"}
     try:
         import portal as portal_module
-        conn = portal_module.get_conn()
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM sessions")
-            result["sessions_count"] = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM shipments")
-            result["shipments_count"] = cur.fetchone()[0]
-        conn.close()
+        with portal_module.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM sessions")
+                result["sessions_count"] = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM shipments")
+                result["shipments_count"] = cur.fetchone()[0]
         result["db_status"] = "connected"
     except Exception as e:
         result["db_status"] = "error"
