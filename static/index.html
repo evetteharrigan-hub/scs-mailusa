@@ -1120,6 +1120,15 @@
                                 <span>✓ Invoice saved</span>
                                 <a href={`/invoice-pdf/${savedId}`} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-asian-maroon text-asian-gold rounded-lg">Open PDF</a>
                                 <a href={`/invoice-pdf/${savedId}?print=true`} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-asian-maroon text-asian-gold rounded-lg">Print</a>
+                                <button onClick={() => {
+                                    if (!form) return;
+                                    const serviceFee = (parseFloat(form.customs_duties) || 0) * 0.05;
+                                    const totalECVal = (parseFloat(form.customs_duties) || 0) + 10.00 + serviceFee;
+                                    const totalUSDVal = totalECVal / 2.6882;
+                                    const subject = encodeURIComponent(`Your Package Is Ready for Collection - ${form.customer_name}`);
+                                    const body = encodeURIComponent(`SAFE CARGO SERVICES\nSandy Ground, Anguilla  |  Tel: (264) 498-0194\nCUSTOMS CLEARANCE INVOICE\n---------------------------------------------\n\nDear ${form.customer_name},\n\nYour package has arrived and is ready for collection at Safe Cargo Services Warehouse, Sandy Ground, Anguilla.\n\n📍 Location: https://maps.google.com/?q=18.200729,-63.081019&t=k\n\nTracking Number: ${form.tracking_number}\nDate of Arrival: ${form.arrival_date}\nDescription: ${form.description}\n\nCHARGES DUE\n---------------------------------------------\nCustoms Duties:                    EC$ ${(parseFloat(form.customs_duties)||0).toFixed(2)}\nAASPA Fee:                         EC$ 10.00\nImport Clearance Service Fee (5%): EC$ ${serviceFee.toFixed(2)}\n---------------------------------------------\nTOTAL DUE:                         EC$ ${totalECVal.toFixed(2)}\nTOTAL DUE (USD):                   US$ ${totalUSDVal.toFixed(2)}\n\nExchange Rate: EC$2.6882 = US$1.00\n\nPlease bring a valid government-issued photo ID upon collection.\n\nWarm regards,\nSafe Cargo Services\nTel: (264) 498-0194`);
+                                    window.location.href = `mailto:${form.email || ''}?subject=${subject}&body=${body}`;
+                                }} className="px-4 py-2 bg-asian-dark border border-asian-gold text-asian-gold font-bold rounded-lg hover:bg-asian-maroon transition-colors flex items-center gap-2"><i className="fas fa-envelope"></i> Email Customer</button>
                             </div>}
                         </form>}
                         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
