@@ -990,6 +990,23 @@
                     a.click();
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
+
+                    // Save to history for re-generation
+                    const invoiceEntry = {
+                        id: `inv-${Date.now()}`,
+                        date: new Date().toLocaleString(),
+                        type: 'Customer Invoice',
+                        master_awb: form.tracking_number || '',
+                        carrier_name: form.shipper_name || '',
+                        spreadsheet_name: `${form.customer_name || 'Customer'} — ${form.tracking_number || ''}`,
+                        row_count: 1,
+                        invoiceFormData: { ...form }
+                    };
+                    try {
+                        await fetch('/api/history', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(invoiceEntry) });
+                        setHistory(prev => [invoiceEntry, ...prev]);
+                    } catch(e) {}
+
                 } catch (err) {
                     alert('Error generating invoice: ' + err.message);
                 } finally {
@@ -1525,6 +1542,14 @@ Sandy Ground, Anguilla`
                                         {Array.isArray(entry.rows) && entry.rows.length > 0 && (
                                             <button onClick={(e) => { e.stopPropagation(); onLoad(entry, true); }}
                                                 className="px-4 py-2 bg-asian-red text-white text-sm font-semibold rounded-lg hover:bg-asian-maroon">Enter Duties & Create Invoices</button>
+                                        )}
+                                        {entry.type === 'Customer Invoice' && entry.invoiceFormData && (
+                                            <button onClick={async (e) => { e.stopPropagation();
+                                                const fd = new FormData();
+                                                Object.entries(entry.invoiceFormData).forEach(([k,v]) => fd.append(k, v||''));
+                                                const res = await fetch('/generate-customer-invoice', {method:'POST',body:fd});
+                                                if (res.ok) { const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `SCS_Invoice_${entry.invoiceFormData.tracking_number||'invoice'}.pdf`; a.click(); }
+                                            }} className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white" style={{background:'#1565c0',marginRight:'6px'}}>Re-generate PDF</button>
                                         )}
                                         <button onClick={(e) => { e.stopPropagation(); onDelete(entry.id); }}
                                             className="px-4 py-2 border border-asian-red text-asian-red text-sm rounded-lg hover:bg-red-50">Delete</button>
