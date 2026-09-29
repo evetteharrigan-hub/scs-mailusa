@@ -929,7 +929,7 @@
 
 
         // ─── Customer Invoice Tab ──────────────────────────────────────
-        function CustomerInvoiceTab({ history, historyLoading }) {
+        function CustomerInvoiceTab({ history, historyLoading, saveToHistory }) {
             const [form, setForm] = useState({
                 tracking_number: '',
                 customer_name: '',
@@ -955,6 +955,7 @@
             const totalUSD = totalEC / EXCHANGE_RATE;
 
             const [generating, setGenerating] = useState(false);
+            const [emailWarning, setEmailWarning] = useState('');
 
             const generateInvoice = async () => {
                 setGenerating(true);
@@ -1002,10 +1003,7 @@
                         row_count: 1,
                         invoiceFormData: { ...form }
                     };
-                    try {
-                        await fetch('/api/history', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(invoiceEntry) });
-                        setHistory(prev => [invoiceEntry, ...prev]);
-                    } catch(e) {}
+                    await saveToHistory(invoiceEntry);
 
                 } catch (err) {
                     alert('Error generating invoice: ' + err.message);
@@ -1015,10 +1013,7 @@
             };
 
             const emailCustomer = (details) => {
-                if (!details.email || !details.customer_name) {
-                    alert('Please fill in both the Email and Customer Name fields before sending an email.');
-                    return;
-                }
+                setEmailWarning(!details.email ? 'No email address found. Add a recipient in your email client.' : '');
                 const serviceFee = (parseFloat(details.customs_duties) || 0) * 0.05;
                 const totalECVal = (parseFloat(details.customs_duties) || 0) + 10.00 + serviceFee;
                 const totalUSDVal = totalECVal / 2.6882;
@@ -1088,14 +1083,16 @@ Sandy Ground, Anguilla`
             const [arrivalDate, setArrivalDate] = useState('');
             const [customers, setCustomers] = useState(null);
             const [individualOpen, setIndividualOpen] = useState(false);
+            const latestWithRows = history.find(e => (e.rows && e.rows.length > 0) || (e.customers && e.customers.length > 0));
+            const sessionRows = latestWithRows ? (latestWithRows.rows || latestWithRows.customers?.map(c => ({...c, buyer_name: c.name || c.buyer_name, tracking_number: c.tracking || c.tracking_number})) || []) : [];
+            const dutiesFromHistory = (tracking) => latestWithRows?.dutiesMap?.[tracking] ?? 0;
 
             const loadCustomers = () => {
-                const entry = history.find(item => Array.isArray(item.rows) && item.rows.length > 0);
-                setCustomers(entry ? [...entry.rows].sort((a, b) =>
-                    String(a.buyer_name || '').trim().split(/\s+/)[0].localeCompare(
-                        String(b.buyer_name || '').trim().split(/\s+/)[0], undefined, { sensitivity: 'base' })
-                    || String(a.buyer_name || '').localeCompare(String(b.buyer_name || ''), undefined, { sensitivity: 'base' })
-                ).map(row => ({ row, duties: entry.dutiesMap?.[row.tracking_number] ?? 0 })) : []);
+                setCustomers(latestWithRows ? [...sessionRows].sort((a, b) =>
+                    String(a.buyer_name || a.name || '').trim().split(/\s+/)[0].localeCompare(
+                        String(b.buyer_name || b.name || '').trim().split(/\s+/)[0], undefined, { sensitivity: 'base' })
+                    || String(a.buyer_name || a.name || '').localeCompare(String(b.buyer_name || b.name || ''), undefined, { sensitivity: 'base' })
+                ) : []);
             };
 
             const customerDetails = (row, duties) => ({
@@ -1120,6 +1117,7 @@ Sandy Ground, Anguilla`
             return (
                 <div className="fade-in space-y-6">
                     <div className="card-warm rounded-lg p-6">
+                        <h2 className="text-xl font-bold text-asian-maroon mb-5"><i className="fas fa-envelope text-asian-gold mr-2"></i>Email Customers</h2>
                         <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">STEP 1 — DATE OF ARRIVAL</h3>
                         <div className="flex flex-wrap items-end gap-4">
                             <div>
@@ -1130,29 +1128,39 @@ Sandy Ground, Anguilla`
                             <button onClick={loadCustomers} disabled={historyLoading} className="px-6 py-2.5 bg-asian-maroon text-asian-gold font-bold rounded-lg hover:bg-asian-maroon-deep">Load Customers</button>
                         </div>
                     </div>
-                    {customers !== null && (
+                    {historyLoading ? (
+                        <div role="status" className="card-warm rounded-lg p-6 text-asian-maroon">
+                            <i className="fas fa-spinner fa-spin text-asian-gold mr-2" aria-hidden="true"></i>Loading session history...
+                        </div>
+                    ) : customers !== null && (
                         <div className="card-warm rounded-lg p-6">
                             <h3 className="section-header text-lg font-semibold text-asian-maroon mb-4">STEP 2 — CUSTOMERS</h3>
-                            {customers.length === 0 ? <p role="status" className="text-gray-600">No session data found. Please generate declarations first.</p> : (
+                            {customers.length === 0 ? <p role="status" className="text-gray-600">No session found. Please generate declarations first.</p> : (
                                 <div className="overflow-x-auto rounded-lg border border-asian-gold-dark/20">
                                     <table className="w-full text-sm">
                                         <thead className="table-header-red"><tr>
+                                            <th scope="col" className="px-3 py-2 text-left">#</th>
                                             <th scope="col" className="px-3 py-2 text-left">Customer Name</th>
                                             <th scope="col" className="px-3 py-2 text-left">Tracking #</th>
                                             <th scope="col" className="px-3 py-2 text-left">Description</th>
                                             <th scope="col" className="px-3 py-2 text-center">📧</th>
                                         </tr></thead>
-                                        <tbody>{customers.map(({ row, duties }, i) => (
-                                            <tr key={`${row.tracking_number}-${i}`} tabIndex={0} onClick={() => selectCustomer(row, duties)}
-                                                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectCustomer(row, duties); } }}
+                                        <tbody>{customers.map((row, i) => (
+                                            <tr key={`${row.tracking_number || row.tracking}-${i}`} tabIndex={0} onClick={() => selectCustomer(row, dutiesFromHistory(row.tracking_number || row.tracking))}
+                                                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectCustomer(row, dutiesFromHistory(row.tracking_number || row.tracking)); } }}
                                                 className="table-row-alt cursor-pointer hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-asian-gold"
                                                 aria-label={`Select ${row.buyer_name || 'customer'} for individual invoice`}>
-                                                <td className="px-3 py-2">{row.buyer_name || '—'}</td>
-                                                <td className="px-3 py-2 font-mono text-xs">{row.tracking_number || '—'}</td>
-                                                <td className="px-3 py-2" title={row.items_description || ''}>{String(row.items_description || '').length > 40 ? String(row.items_description).slice(0, 40) + '…' : (row.items_description || '—')}</td>
+                                                <td className="px-3 py-2">{i + 1}</td>
+                                                <td className="px-3 py-2">{row.buyer_name || row.name || '—'}</td>
+                                                <td className="px-3 py-2 font-mono text-xs">{row.tracking_number || row.tracking || '—'}</td>
+                                                <td className="px-3 py-2" title={customerDetails(row, 0).description}>
+                                                    {customerDetails(row, 0).description.length > 50
+                                                        ? customerDetails(row, 0).description.slice(0, 50) + '…'
+                                                        : customerDetails(row, 0).description || '—'}
+                                                </td>
                                                 <td className="px-3 py-2 text-center"><button type="button" title={`Email ${row.buyer_name || 'customer'}`}
                                                     aria-label={`Email ${row.buyer_name || 'customer'}`}
-                                                    onClick={(e) => { e.stopPropagation(); emailCustomer(customerDetails(row, duties)); }}
+                                                    onClick={(e) => { e.stopPropagation(); emailCustomer(customerDetails(row, dutiesFromHistory(row.tracking_number || row.tracking))); }}
                                                     className="text-asian-maroon hover:text-asian-red p-2 rounded focus:outline-none focus:ring-2 focus:ring-asian-gold">📧</button></td>
                                             </tr>
                                         ))}</tbody>
@@ -1161,6 +1169,7 @@ Sandy Ground, Anguilla`
                             )}
                         </div>
                     )}
+                    {emailWarning && <p role="status" className="text-sm text-asian-maroon bg-yellow-50 border border-asian-gold rounded-lg px-4 py-2">{emailWarning}</p>}
                     <details open={individualOpen} onToggle={(e) => setIndividualOpen(e.currentTarget.open)} className="card-warm rounded-lg p-6">
                         <summary className="section-header text-lg font-semibold text-asian-maroon cursor-pointer">Generate Individual Invoice PDF</summary>
                         <div className="mt-6">
@@ -1774,7 +1783,7 @@ Sandy Ground, Anguilla`
                         : activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} restoredDutiesMap={restoredDutiesMap} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} onDutiesChanged={saveDutiesToHistory} />
                         : activeTab === 'manifest' ? <ManifestTab />
                         : activeTab === 'history' ? <HistoryTab history={history} loading={historyLoading} error={historyError} onLoad={loadDetails} onDelete={deleteHistory} onClear={clearHistory} />
-                        : <CustomerInvoiceTab history={history} historyLoading={historyLoading} />}
+                        : <CustomerInvoiceTab history={history} historyLoading={historyLoading} saveToHistory={saveToHistory} />}
 
                     {/* Footer */}
                     <div className="mt-8 mb-6 text-center text-gray-400 text-sm">
