@@ -2735,6 +2735,28 @@ async def generate_manifest(
 
 # Mount static files LAST so API routes take priority
 # ─── Portal page + API (must be registered before the static mount) ────────────
+
+@app.get("/api/health-db")
+async def health_db():
+    """Test DB connection and return table status."""
+    import os
+    db_url = os.environ.get("DATABASE_URL", "NOT SET")
+    result = {"db_url_set": db_url != "NOT SET", "db_url_prefix": db_url[:30] if db_url != "NOT SET" else "N/A"}
+    try:
+        import portal as portal_module
+        conn = portal_module.get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM sessions")
+            result["sessions_count"] = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM shipments")
+            result["shipments_count"] = cur.fetchone()[0]
+        conn.close()
+        result["db_status"] = "connected"
+    except Exception as e:
+        result["db_status"] = "error"
+        result["db_error"] = str(e)
+    return result
+
 @app.get("/portal")
 async def portal():
     from fastapi.responses import FileResponse
