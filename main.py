@@ -1972,7 +1972,17 @@ async def save_invoice(invoice: SaveInvoiceRequest):
             cur.execute("""INSERT INTO invoices
                 (tracking_number, customer_name, customs_duties, clearance_fee,
                  aaspa_security_fee, total_ec, total_usd, arrival_date, pdf_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tracking_number) DO UPDATE SET
+                    customer_name = EXCLUDED.customer_name,
+                    customs_duties = EXCLUDED.customs_duties,
+                    clearance_fee = EXCLUDED.clearance_fee,
+                    total_ec = EXCLUDED.total_ec,
+                    total_usd = EXCLUDED.total_usd,
+                    arrival_date = EXCLUDED.arrival_date,
+                    pdf_data = EXCLUDED.pdf_data,
+                    generated_at = CURRENT_TIMESTAMP
+                RETURNING id""",
                 (invoice.tracking_number.strip(), invoice.customer_name.strip(), duties,
                  fee, 10.00, invoice.total_ec, invoice.total_usd, invoice.arrival_date,
                  portal_module.psycopg2.Binary(pdf_bytes)))
