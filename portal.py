@@ -13,7 +13,7 @@ import hmac
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Form, Header, Query, HTTPException
+from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -154,6 +154,9 @@ def init_db() -> bool:
             for column in ("buyer_address", "buyer_phone", "buyer_email", "shipper_name"):
                 cur.execute(f"ALTER TABLE shipments ADD COLUMN IF NOT EXISTS {column} TEXT")
             cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS invoice_form_data JSONB")
+            cur.execute("""DELETE FROM invoices a USING invoices b
+                           WHERE a.tracking_number = b.tracking_number AND a.id < b.id""")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_tracking ON invoices (tracking_number)")
             # Migrate older schema that had two separate $10 fees -> one field
             cur.execute("""
                 SELECT column_name FROM information_schema.columns
@@ -449,6 +452,7 @@ async def clear_history():
 # ─── Warehouse ─────────────────────────────────────────────────────────────────
 
 SHIPMENT_COLS = """tracking_number, buyer_name, description, date_of_arrival, cif_value, customs_duties,
+    (COALESCE(customs_duties, 0) > 0) AS processed,
     clearance_fee, aaspa_security_fee, total_due, date_paid, payment_method, paid,
     manifest_reference, voyage_number, created_at"""
 
@@ -494,8 +498,61 @@ async def accounting_search(q: str = "", user: dict = Depends(accounting_user)):
     rows = _search(q)
     keys = ("tracking_number", "buyer_name", "date_of_arrival", "customs_duties", "clearance_fee",
             "aaspa_security_fee", "total_due", "paid", "date_paid", "payment_method",
-            "payment_method_label", "description", "days_outstanding")
+            "payment_method_label", "description", "days_outstanding", "processed")
     return [{k: r.get(k) for k in keys if k in r} for r in rows]
+
+
+class ProcessRequest(BaseModel):
+    tracking_number: str
+    customs_duties: float
+
+
+def _apply_duties(cur, tracking: str, duties: float):
+    fees = calc_fees(duties)
+    cur.execute(f"""UPDATE shipments SET customs_duties = %(customs_duties)s, clearance_fee = %(clearance_fee)s,
+                    aaspa_security_fee = %(aaspa_security_fee)s, total_due = %(total_due)s
+                    WHERE tracking_number = %(t)s RETURNING {SHIPMENT_COLS}""", {**fees, "t": tracking})
+    return cur.fetchone()
+
+
+@router.post("/accounting/process")
+async def accounting_process(body: ProcessRequest, user: dict = Depends(accounting_user)):
+    _require_db()
+    if body.customs_duties != body.customs_duties or body.customs_duties <= 0:
+        raise HTTPException(status_code=400, detail="Enter customs duties greater than 0.")
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        r = _apply_duties(cur, body.tracking_number.strip(), body.customs_duties)
+    if not r:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return {"success": True, "shipment": _row_to_json(r)}
+
+
+@router.post("/accounting/process-payment-order")
+async def accounting_process_payment_order(pdf_file: UploadFile = File(...), user: dict = Depends(accounting_user)):
+    """Read duties from an ASYCUDA payment order PDF and process every matching unprocessed shipment."""
+    import main as main_module
+    _require_db()
+    matches = main_module.parse_payment_order_pdf(await pdf_file.read())
+    if not matches:
+        raise HTTPException(status_code=400, detail="No payment order lines found in that PDF.")
+    processed, unmatched = [], []
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT tracking_number, buyer_name FROM shipments WHERE COALESCE(customs_duties, 0) <= 0")
+        pending = cur.fetchall()
+        used = set()
+        for m in matches:
+            hits = [s for s in pending if m["digits"] in s["tracking_number"] and s["tracking_number"] not in used]
+            if not hits:
+                unmatched.append(m["declarant_ref"])
+                continue
+            s = hits[0]
+            used.add(s["tracking_number"])
+            _apply_duties(cur, s["tracking_number"], m["amount_ec"])
+            processed.append({"tracking_number": s["tracking_number"], "buyer_name": s["buyer_name"],
+                              "customs_duties": m["amount_ec"]})
+    return {"success": True, "processed": processed, "unmatched": unmatched}
 
 
 class MarkPaidRequest(BaseModel):

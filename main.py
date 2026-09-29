@@ -1994,6 +1994,12 @@ async def save_invoice(invoice: SaveInvoiceRequest):
                  fee, 10.00, invoice.total_ec, invoice.total_usd, invoice.arrival_date,
                  portal_module.psycopg2.Binary(pdf_bytes)))
             invoice_id = cur.fetchone()[0]
+            if duties > 0:
+                fees = portal_module.calc_fees(duties)
+                cur.execute("""UPDATE shipments SET customs_duties = %(customs_duties)s,
+                               clearance_fee = %(clearance_fee)s, aaspa_security_fee = %(aaspa_security_fee)s,
+                               total_due = %(total_due)s WHERE tracking_number = %(t)s""",
+                            {**fees, "t": invoice.tracking_number.strip()})
     except Exception as exc:
         print(f"[invoice] Save failed: {exc}")
         return {"success": False}
