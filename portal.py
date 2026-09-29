@@ -10,7 +10,6 @@ import os
 import contextlib
 import re
 import hmac
-from contextlib import contextmanager
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
@@ -58,7 +57,6 @@ def _dsn() -> str:
     return os.environ.get("DATABASE_URL", "")
 
 
-@contextmanager
 @contextlib.contextmanager
 def get_conn():
     dsn = _dsn()
