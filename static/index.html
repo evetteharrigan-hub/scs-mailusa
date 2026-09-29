@@ -968,7 +968,7 @@
                 return () => { clearTimeout(timer); controller.abort(); };
             }, [searchQuery, selected]);
 
-            const choose = async (row) => {
+            const choose = (row) => {
                 setCustomerRows(prev => prev.some(item => item.tracking_number === row.tracking_number)
                     ? prev : matches.filter(item => item.buyer_name?.toLowerCase() === row.buyer_name?.toLowerCase()));
                 setSelected(row);
@@ -976,15 +976,8 @@
                 setMatches([]);
                 setSavedId(null);
                 setError('');
-                // Look up any duties already saved in the accounting portal
-                let portalDuties = '';
-                try {
-                    const res = await fetch(`/invoice-duties/${encodeURIComponent(row.tracking_number || '')}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.found && data.customs_duties != null) portalDuties = String(data.customs_duties);
-                    }
-                } catch (_) {}
+                // customs_duties comes from the search result (joined from invoices table in portal)
+                const portalDuties = (row.customs_duties != null && row.customs_duties !== '') ? String(row.customs_duties) : '';
                 setForm({
                     tracking_number: row.tracking_number || '',
                     customer_name: row.buyer_name || '',

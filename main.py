@@ -1923,10 +1923,15 @@ async def search_customer(q: str = ""):
             columns = ", ".join(("tracking_number", "buyer_name", "description", "cif_value",
                                  "date_of_arrival", "customs_duties") +
                                 tuple(column for column in optional_columns if column in present))
-            cur.execute(f"""SELECT {columns} FROM shipments WHERE buyer_name ILIKE %s
+            cur.execute(f"""SELECT s.{columns.replace(", ", ", s.")},
+                                  COALESCE(i.customs_duties, NULL) AS portal_duties
+                           FROM shipments s
+                           LEFT JOIN invoices i ON i.tracking_number = s.tracking_number
+                           WHERE s.buyer_name ILIKE %s
                            LIMIT 15""", (f"%{q.strip()}%",))
             return [{**dict(row),
                      **{column: row.get(column) or "" for column in optional_columns},
+                     "customs_duties": row.get("portal_duties") if row.get("portal_duties") is not None else (row.get("customs_duties") or ""),
                      "date_of_arrival": row["date_of_arrival"].isoformat()
                      if row.get("date_of_arrival") else None} for row in cur.fetchall()]
     except Exception as exc:
@@ -1945,19 +1950,6 @@ class SaveInvoiceRequest(BaseModel):
 
 
 
-@app.get("/invoice-duties/{tracking_number}")
-async def get_invoice_duties(tracking_number: str):
-    """Return customs_duties already saved in the portal for a tracking number."""
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT customs_duties FROM invoices WHERE tracking_number = %s", (tracking_number,))
-                row = cur.fetchone()
-                if row:
-                    return {"found": True, "customs_duties": row[0]}
-                return {"found": False, "customs_duties": None}
-    except Exception:
-        return {"found": False, "customs_duties": None}
 
 @app.post("/save-invoice")
 async def save_invoice(invoice: SaveInvoiceRequest):
