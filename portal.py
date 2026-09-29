@@ -148,7 +148,9 @@ def init_db() -> bool:
     try:
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(SCHEMA_SQL)
+            # Execute each statement separately (psycopg2 doesn't support multi-statement execute)
+            for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
+                cur.execute(stmt)
             for column in ("buyer_address", "buyer_phone", "buyer_email", "shipper_name"):
                 cur.execute(f"ALTER TABLE shipments ADD COLUMN IF NOT EXISTS {column} TEXT")
             cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS invoice_form_data JSONB")
