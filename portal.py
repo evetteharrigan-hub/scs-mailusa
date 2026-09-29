@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Header, Query, HTTPException
+from fastapi import APIRouter, Body, Depends, Form, Header, Query, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover
     psycopg2 = None
 
 router = APIRouter(prefix="/portal")
+history_router = APIRouter(prefix="/api/history")
 
 AST = timezone(timedelta(hours=-4))  # Anguilla, no DST
 AASPA_SECURITY_FEE = 10.00
@@ -94,6 +95,22 @@ CREATE TABLE IF NOT EXISTS shipments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    session_date TEXT,
+    type TEXT,
+    master_awb TEXT,
+    voyage_number TEXT,
+    date_of_departure TEXT,
+    carrier_name TEXT,
+    manifest_reference TEXT,
+    spreadsheet_name TEXT,
+    row_count INTEGER DEFAULT 0,
+    "rows" JSONB,
+    duties_map JSONB
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -137,7 +154,7 @@ def init_db() -> bool:
                     (username, f"env:{env_name}", role),
                 )
         _db_ready = True
-        print("[portal] Database initialised (shipments, users)")
+        print("[portal] Database initialised (shipments, users, sessions)")
     except Exception as e:
         _db_ready = False
         print(f"[portal] WARNING: database init failed: {e}")
@@ -301,6 +318,78 @@ async def portal_login(username: str = Form(...), password: str = Form(...)):
         if expected and hmac.compare_digest(password.encode(), expected.encode()):
             return {"success": True, "role": role, "token": f"{role}-session"}
     return JSONResponse(status_code=401, content={"success": False, "message": "Invalid username or password"})
+
+
+# ─── Main app session history ───────────────────────────────────────────────────
+
+HISTORY_COLS = """id, session_date AS "date", type, master_awb, voyage_number,
+    date_of_departure, carrier_name, manifest_reference, spreadsheet_name,
+    row_count, "rows", duties_map AS "dutiesMap"""
+
+
+@history_router.post("")
+async def save_history(entry: dict = Body(...)):
+    if not isinstance(entry.get("id"), str) or not entry["id"].strip():
+        raise HTTPException(status_code=422, detail="A nonempty session id is required.")
+    if not isinstance(entry.get("rows", []), list) or not isinstance(entry.get("dutiesMap", {}), dict):
+        raise HTTPException(status_code=422, detail="rows must be a list and dutiesMap must be an object.")
+    row_count = entry.get("row_count", 0)
+    if not isinstance(row_count, int) or isinstance(row_count, bool):
+        raise HTTPException(status_code=422, detail="row_count must be an integer.")
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"""
+            INSERT INTO sessions (id, session_date, type, master_awb, voyage_number,
+                date_of_departure, carrier_name, manifest_reference, spreadsheet_name,
+                row_count, "rows", duties_map)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                session_date = EXCLUDED.session_date, type = EXCLUDED.type,
+                master_awb = EXCLUDED.master_awb, voyage_number = EXCLUDED.voyage_number,
+                date_of_departure = EXCLUDED.date_of_departure,
+                carrier_name = EXCLUDED.carrier_name,
+                manifest_reference = EXCLUDED.manifest_reference,
+                spreadsheet_name = EXCLUDED.spreadsheet_name,
+                row_count = EXCLUDED.row_count, "rows" = EXCLUDED."rows",
+                duties_map = EXCLUDED.duties_map
+            RETURNING {HISTORY_COLS}
+        """, (
+            entry["id"], entry.get("date"), entry.get("type"), entry.get("master_awb"),
+            entry.get("voyage_number"), entry.get("date_of_departure"),
+            entry.get("carrier_name"), entry.get("manifest_reference"),
+            entry.get("spreadsheet_name"), row_count,
+            psycopg2.extras.Json(entry.get("rows", [])),
+            psycopg2.extras.Json(entry.get("dutiesMap", {})),
+        ))
+        return dict(cur.fetchone())
+
+
+@history_router.get("")
+async def list_history():
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"SELECT {HISTORY_COLS} FROM sessions ORDER BY created_at DESC LIMIT 50")
+        return [dict(row) for row in cur.fetchall()]
+
+
+@history_router.delete("/{id}")
+async def delete_history(id: str):
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM sessions WHERE id = %s", (id,))
+    return {"success": True}
+
+
+@history_router.delete("")
+async def clear_history():
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM sessions")
+    return {"success": True}
 
 
 # ─── Warehouse ─────────────────────────────────────────────────────────────────
