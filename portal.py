@@ -403,10 +403,30 @@ async def save_history(entry: dict = Body(...)):
 @history_router.get("")
 async def list_history():
     _require_db()
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(f"SELECT {HISTORY_COLS} FROM sessions ORDER BY created_at DESC LIMIT 50")
-        return [dict(row) for row in cur.fetchall()]
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, session_date AS date, type, master_awb, voyage_number,
+                       date_of_departure, carrier_name, manifest_reference, spreadsheet_name,
+                       row_count, rows, duties_map, invoice_form_data
+                FROM sessions ORDER BY created_at DESC LIMIT 50
+            """)
+            cols = [d[0] for d in cur.description]
+            rows_data = cur.fetchall()
+            result = []
+            for row in rows_data:
+                d = dict(zip(cols, row))
+                # Rename for frontend compatibility
+                d["dutiesMap"] = d.pop("duties_map", None)
+                d["invoiceFormData"] = d.pop("invoice_form_data", None)
+                result.append(d)
+            return result
+    except Exception as e:
+        print(f"[history] list error: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 @history_router.delete("/{id}")
