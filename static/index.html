@@ -650,6 +650,9 @@
                         document.body.appendChild(a); a.click(); a.remove();
                         window.URL.revokeObjectURL(url);
                         if (!usingSavedRows) onGenerated('Declarations', info, xlsxFile?.name || '', parsedRows.length, parsedRows, dutiesMap);
+                        // Save invoice generation to history
+                        const invoiceCount = Object.keys(activeDuties).filter(k => activeDuties[k] > 0).length;
+                        onGenerated('Invoices', info, xlsxFile?.name || (usingSavedRows ? 'saved session' : ''), invoiceCount, invoiceRows, activeDuties);
                     } else {
                         const err = await res.json();
                         setError(err.detail || 'Failed to generate invoices');
