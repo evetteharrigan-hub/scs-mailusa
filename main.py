@@ -1944,6 +1944,21 @@ class SaveInvoiceRequest(BaseModel):
     pdf_base64: str
 
 
+
+@app.get("/invoice-duties/{tracking_number}")
+async def get_invoice_duties(tracking_number: str):
+    """Return customs_duties already saved in the portal for a tracking number."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT customs_duties FROM invoices WHERE tracking_number = %s", (tracking_number,))
+                row = cur.fetchone()
+                if row:
+                    return {"found": True, "customs_duties": row[0]}
+                return {"found": False, "customs_duties": None}
+    except Exception:
+        return {"found": False, "customs_duties": None}
+
 @app.post("/save-invoice")
 async def save_invoice(invoice: SaveInvoiceRequest):
     if not invoice.tracking_number.strip() or not invoice.customer_name.strip():

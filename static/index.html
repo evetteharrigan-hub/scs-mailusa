@@ -968,7 +968,7 @@
                 return () => { clearTimeout(timer); controller.abort(); };
             }, [searchQuery, selected]);
 
-            const choose = (row) => {
+            const choose = async (row) => {
                 setCustomerRows(prev => prev.some(item => item.tracking_number === row.tracking_number)
                     ? prev : matches.filter(item => item.buyer_name?.toLowerCase() === row.buyer_name?.toLowerCase()));
                 setSelected(row);
@@ -976,6 +976,15 @@
                 setMatches([]);
                 setSavedId(null);
                 setError('');
+                // Look up any duties already saved in the accounting portal
+                let portalDuties = '';
+                try {
+                    const res = await fetch(`/invoice-duties/${encodeURIComponent(row.tracking_number || '')}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.found && data.customs_duties != null) portalDuties = String(data.customs_duties);
+                    }
+                } catch (_) {}
                 setForm({
                     tracking_number: row.tracking_number || '',
                     customer_name: row.buyer_name || '',
@@ -987,7 +996,7 @@
                     shipper_name: row.shipper_name || '',
                     shipper_invoice_number: '',
                     total_order_value: row.cif_value || 0,
-                    customs_duties: ''
+                    customs_duties: portalDuties
                 });
             };
             const change = (field, value) => {
