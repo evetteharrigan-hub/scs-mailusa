@@ -7,6 +7,7 @@ SCS-MAILUSA Portal: warehouse + accounting module.
 """
 import io
 import os
+import contextlib
 import re
 import hmac
 from contextlib import contextmanager
@@ -58,6 +59,7 @@ def _dsn() -> str:
 
 
 @contextmanager
+@contextlib.contextmanager
 def get_conn():
     dsn = _dsn()
     if not dsn:
