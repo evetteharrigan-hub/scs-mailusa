@@ -132,6 +132,9 @@
           <input id="wh-q" placeholder="e.g. John Smith or 1Z999AA1…" autocomplete="off">
           <button class="btn btn-primary" type="submit">Search</button>
         </form>
+        <select id="wh-filter" style="padding:8px;border-radius:6px;border:1px solid #ccc">
+          <option value="all">All</option><option value="notproc">Not Processed</option>
+          <option value="unpaid">Unpaid</option><option value="paid">Paid</option></select>
       </div>
       <div class="table-wrap">
         <table class="data">
@@ -386,7 +389,9 @@
     tbody.innerHTML = '<tr><td colspan="6" class="empty">Searching…</td></tr>';
     try {
       const res = await api('/portal/shipments/search?q=' + encodeURIComponent($('wh-q').value.trim()));
-      whRows = await res.json();
+      const allWh = await res.json();
+      const wf = $('wh-filter').value;
+      whRows = allWh.filter(r => wf === 'all' || (wf === 'notproc' && !r.processed && !r.paid) || (wf === 'unpaid' && r.processed && !r.paid) || (wf === 'paid' && r.paid));
       tbody.innerHTML = whRows.length ? whRows.map((r, i) => `
         <tr data-i="${i}">
           <td class="mono">${esc(r.tracking_number)}</td>
@@ -394,9 +399,9 @@
           <td>${fmtDate(r.date_of_arrival)}</td>
           <td>${fmtDate(r.date_paid)}</td>
           <td class="desc hide-sm">${esc((r.description || '').slice(0, 90))}${(r.description || '').length > 90 ? '…' : ''}</td>
-          <td>${badge(r.paid)}</td>
+          <td>${badge(r.paid, r.processed)}</td>
         </tr>`).join('') : '<tr><td colspan="6" class="empty">No packages found.</td></tr>';
-      $('wh-count').textContent = whRows.length ? `${whRows.length} package(s)` : '';
+      $('wh-count').textContent = whRows.length ? `${whRows.length} package(s) · ${whRows.filter(r => !r.processed && !r.paid).length} not processed` : '';
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(err.message)}</td></tr>`;
     }
@@ -464,10 +469,10 @@
       ['Manifest Reference', esc(r.manifest_reference) || '—'],
       ['Voyage / Flight', esc(r.voyage_number) || '—'],
       ['CIF Value', r.cif_value ? '$' + Number(r.cif_value).toFixed(2) : '—'],
-      ['Customs Duties', moneyBoth(r.customs_duties)],
-      ['5% Clearance Fee', moneyBoth(r.clearance_fee)],
-      ['AASPA/Security Fee', moneyBoth(r.aaspa_security_fee)],
-      ['Total Due', `<span class="total">${moneyBoth(r.total_due)}</span>`],
+      ['Customs Duties', r.processed ? moneyBoth(r.customs_duties) : 'Awaiting accounting'],
+      ['5% Clearance Fee', r.processed ? moneyBoth(r.clearance_fee) : '—'],
+      ['AASPA/Security Fee', r.processed ? moneyBoth(r.aaspa_security_fee) : '—'],
+      ['Total Due', r.processed ? `<span class="total">${moneyBoth(r.total_due)}</span>` : '—'],
       ['Status', badge(r.paid, r.processed) + (!r.paid && r.processed && r.days_outstanding != null ? ` <span style="color:var(--muted);font-size:13px">${r.days_outstanding} day(s) since arrival</span>` : '')],
       ['Date Paid', fmtDate(r.date_paid)],
       ['Payment Method', esc(METHOD_LABELS[r.payment_method] || r.payment_method) || '—'],
@@ -507,6 +512,7 @@
   });
 
   $('ac-filter').addEventListener('change', acSearch);
+  $('wh-filter').addEventListener('change', whSearch);
   $('po-btn').addEventListener('click', () => $('po-file').click());
   $('po-file').addEventListener('change', async () => {
     const files = Array.from($('po-file').files); if (!files.length) return;
