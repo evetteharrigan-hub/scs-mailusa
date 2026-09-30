@@ -154,7 +154,7 @@
           <option value="all">All</option><option value="notproc">Not Processed</option>
           <option value="unpaid">Unpaid</option><option value="paid">Paid</option></select>
         <button class="btn btn-gold" id="po-btn" type="button">Upload Payment Order PDF</button>
-        <input type="file" id="po-file" accept=".pdf" class="hidden">
+        <input type="file" id="po-file" accept=".pdf" multiple class="hidden">
         <button class="btn btn-gold" id="daily-btn" type="button">Daily Cash Report</button>
           <button onclick="downloadMonthlyReport()" class="btn" style="margin-left:8px">
             <i class="fas fa-calendar-alt"></i> Monthly Report</button>
@@ -509,13 +509,13 @@
   $('ac-filter').addEventListener('change', acSearch);
   $('po-btn').addEventListener('click', () => $('po-file').click());
   $('po-file').addEventListener('change', async () => {
-    const f = $('po-file').files[0]; if (!f) return;
-    const fd = new FormData(); fd.append('pdf_file', f);
+    const files = Array.from($('po-file').files); if (!files.length) return;
+    const fd = new FormData(); files.forEach(f => fd.append('pdf_files', f));
     hide($('ac-msg')); $('po-btn').disabled = true;
     try {
       const res = await api('/portal/accounting/process-payment-order', { method: 'POST', body: fd });
       const d = await res.json();
-      show($('ac-msg'), `Payment order read: ${d.processed.length} invoice(s) processed` + (d.unmatched.length ? `, ${d.unmatched.length} line(s) with no matching unprocessed shipment (${d.unmatched.join(', ')}).` : '.'), d.processed.length ? 'ok' : 'err');
+      show($('ac-msg'), `${files.length} PDF(s) read: ${d.processed.length} invoice(s) processed` + (d.unmatched.length ? `, ${d.unmatched.length} line(s) with no matching unprocessed shipment (${d.unmatched.join(', ')}).` : '.'), d.processed.length ? 'ok' : 'err');
       acSearch();
     } catch (err) { show($('ac-msg'), err.message); }
     finally { $('po-btn').disabled = false; $('po-file').value = ''; }

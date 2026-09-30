@@ -11,7 +11,7 @@ import contextlib
 import re
 import hmac
 from datetime import datetime, date, timedelta, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -529,13 +529,19 @@ async def accounting_process(body: ProcessRequest, user: dict = Depends(accounti
 
 
 @router.post("/accounting/process-payment-order")
-async def accounting_process_payment_order(pdf_file: UploadFile = File(...), user: dict = Depends(accounting_user)):
+async def accounting_process_payment_order(pdf_files: List[UploadFile] = File(...), user: dict = Depends(accounting_user)):
     """Read duties from an ASYCUDA payment order PDF and process every matching unprocessed shipment."""
     import main as main_module
     _require_db()
-    matches = main_module.parse_payment_order_pdf(await pdf_file.read())
+    matches, seen = [], set()
+    for f in pdf_files:
+        for m in main_module.parse_payment_order_pdf(await f.read()):
+            key = (m["declarant_ref"], m["amount_ec"])
+            if key not in seen:  # same line repeated across uploaded files counts once
+                seen.add(key)
+                matches.append(m)
     if not matches:
-        raise HTTPException(status_code=400, detail="No payment order lines found in that PDF.")
+        raise HTTPException(status_code=400, detail="No payment order lines found in the PDF(s).")
     processed, unmatched = [], []
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
