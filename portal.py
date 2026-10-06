@@ -853,9 +853,10 @@ def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
     elements.append(Paragraph("Sandy Ground, Anguilla  |  Tel: (264) 498-0194", styles["Normal"]))
     elements.append(Spacer(1, 4*mm))
     elements.append(Paragraph(f"MONTHLY CASH REPORT — {month_name.upper()} {year}", styles["Heading2"]))
+    elements.append(Paragraph("All amounts in US$ (exchange rate EC$2.6882 = US$1.00)", styles["Normal"]))
     elements.append(Spacer(1, 4*mm))
 
-    headers = ["#", "Tracking #", "Customer", "Duties (EC$)", "5% Fee (EC$)", "AASPA/Sec (EC$)", "Total (EC$)", "Payment Method", "Date Paid"]
+    headers = ["#", "Tracking #", "Customer", "Duties (US$)", "5% Fee (US$)", "AASPA/Sec (US$)", "Total (US$)", "Payment Method", "Date Paid"]
     data = [headers]
     total = 0
     subtotals = {}
@@ -865,10 +866,10 @@ def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
             str(i),
             r.get("tracking_number",""),
             r.get("buyer_name",""),
-            f"{r.get('customs_duties',0):.2f}",
-            f"{r.get('clearance_fee',0):.2f}",
-            f"{r.get('aaspa_security_fee',10):.2f}",
-            f"{r.get('total_due',0):.2f}",
+            f"{(r.get('customs_duties') or 0)/2.6882:.2f}",
+            f"{(r.get('clearance_fee') or 0)/2.6882:.2f}",
+            f"{(r.get('aaspa_security_fee') or 0)/2.6882:.2f}",
+            f"{(r.get('total_due') or 0)/2.6882:.2f}",
             pm,
             str(r.get("date_paid",""))
         ])
@@ -876,7 +877,7 @@ def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
         subtotals[pm] = subtotals.get(pm, 0) + r.get("total_due", 0)
 
     # Totals row
-    data.append(["", "", "TOTAL", "", "", "", f"{total:.2f}", "", ""])
+    data.append(["", "", "TOTAL", "", "", "", f"{total/2.6882:.2f}", "", ""])
 
     col_widths = [15, 90, 90, 65, 60, 70, 65, 85, 65]
     t = Table(data, colWidths=[w*mm for w in col_widths], repeatRows=1)
@@ -895,10 +896,10 @@ def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
     elements.append(Spacer(1, 4*mm))
 
     # Subtotals by payment method
-    sub_lines = "  |  ".join(f"{k}: EC${v:.2f}" for k, v in subtotals.items())
+    sub_lines = "  |  ".join(f"{k}: US${v/2.6882:.2f}" for k, v in subtotals.items())
     elements.append(Paragraph(f"<b>Subtotals by Payment Method:</b> {sub_lines}", styles["Normal"]))
     elements.append(Spacer(1, 2*mm))
-    elements.append(Paragraph(f"<b>Grand Total: EC${total:.2f}  (US${total/2.6882:.2f})</b>", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Grand Total: US${total/2.6882:.2f}</b>", styles["Normal"]))
     elements.append(Spacer(1, 6*mm))
     elements.append(Paragraph("Prepared by Accounting — Safe Cargo Services", styles["Normal"]))
 
@@ -914,16 +915,17 @@ def build_unclaimed_pdf(days: int, rows: list) -> bytes:
     el = [Paragraph("SAFE CARGO SERVICES", _H1), Paragraph("Sandy Ground, Anguilla", _H2),
           Paragraph("UNCLAIMED PACKAGES REPORT", _H3), Spacer(1, 6),
           Paragraph(f"<b>As of:</b> {today_ast().strftime('%A, %d %B %Y')}", _META),
-          Paragraph(f"Packages unpaid for more than {days} days", _META), Spacer(1, 6)]
+          Paragraph(f"Packages unpaid for more than {days} days", _META),
+          Paragraph("All amounts in US$ (exchange rate EC$2.6882 = US$1.00)", _META), Spacer(1, 6)]
     data = [["Tracking #", "Customer", "Description", "Date of Arrival", "Days Outstanding", "Total Due"]]
     for r in rows:
         data.append([r.get("tracking_number", ""), Paragraph(r.get("buyer_name") or "", _CELL),
                      Paragraph((r.get("description") or "")[:300], _CELL), _fmt_date(r.get("date_of_arrival")),
-                     str(r.get("days_outstanding", "")), _money(r.get("total_due"))])
+                     str(r.get("days_outstanding", "")), _usd(r.get("total_due"))])
     if not rows:
         data.append(["", "No unclaimed packages.", "", "", "", ""])
     total = round(sum(r.get("total_due") or 0 for r in rows), 2)
-    data.append(["TOTAL", f"{len(rows)} package(s)", "", "", "", _money(total)])
+    data.append(["TOTAL", f"{len(rows)} package(s)", "", "", "", _usd(total)])
     widths = [42 * mm, 52 * mm, 84 * mm, 30 * mm, 28 * mm, 32 * mm]
     el.append(_table(data, widths, money_cols=(4, 5), total_rows=1))
     doc.build(el, onFirstPage=_footer, onLaterPages=_footer)
