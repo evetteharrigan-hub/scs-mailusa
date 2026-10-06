@@ -159,8 +159,7 @@
         <button class="btn btn-gold" id="po-btn" type="button">Upload Payment Order PDF</button>
         <input type="file" id="po-file" accept=".pdf" multiple class="hidden">
         <button class="btn btn-gold" id="daily-btn" type="button">Daily Cash Report</button>
-          <button onclick="downloadMonthlyReport()" class="btn" style="margin-left:8px">
-            <i class="fas fa-calendar-alt"></i> Monthly Report</button>
+          <button class="btn btn-gold" id="monthly-btn" type="button">Monthly Report</button>
         <button class="btn btn-gold" id="unclaimed-btn" type="button">Unclaimed Packages</button>
       </div>
       <div class="table-wrap">
@@ -228,6 +227,21 @@
             <button type="submit" class="btn btn-primary" id="pay-btn">Mark as Paid</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="monthly-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head"><h3>Monthly Cash Report</h3><button data-close>&times;</button></div>
+    <div class="modal-body">
+      <div id="monthly-msg" class="msg hidden"></div>
+      <div class="field"><label for="monthly-month">Month</label><input type="month" id="monthly-month"></div>
+      <div id="monthly-summary" style="font-size:14px;color:var(--muted);margin-bottom:12px"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-light" data-close>Close</button>
+        <button type="button" class="btn btn-primary" id="monthly-download">Download PDF</button>
       </div>
     </div>
   </div>
@@ -578,6 +592,36 @@
     const btn = $('daily-download'); btn.disabled = true; btn.textContent = 'Preparing…';
     try { await download('/portal/accounting/daily-report/pdf?date=' + d, `SCS_Daily_Cash_Report_${d}.pdf`); }
     catch (err) { show($('daily-msg'), err.message); }
+    finally { btn.disabled = false; btn.textContent = 'Download PDF'; }
+  });
+
+  // ─── Monthly report ───
+  async function loadMonthlySummary() {
+    const m = $('monthly-month').value; const el = $('monthly-summary');
+    if (!m) { el.textContent = ''; return; }
+    el.textContent = 'Loading…';
+    try {
+      const [y, mo] = m.split('-');
+      const res = await api(`/portal/accounting/monthly-report?year=${+y}&month=${+mo}`);
+      const j = await res.json();
+      const usd = v => 'US$' + ((v || 0) / 2.6882).toFixed(2);
+      el.innerHTML = j.count ? `<b>${j.count}</b> payment(s) · Grand total <b style="color:var(--maroon)">${usd(j.total)}</b>` : 'No payments recorded for this month.';
+    } catch (err) { el.textContent = err.message; }
+  }
+  $('monthly-btn').addEventListener('click', () => {
+    hide($('monthly-msg'));
+    if (!$('monthly-month').value) $('monthly-month').value = todayLocal().slice(0, 7);
+    $('monthly-modal').classList.remove('hidden');
+    loadMonthlySummary();
+  });
+  $('monthly-month').addEventListener('change', loadMonthlySummary);
+  $('monthly-download').addEventListener('click', async () => {
+    const m = $('monthly-month').value;
+    if (!m) return show($('monthly-msg'), 'Choose a month first.');
+    const [y, mo] = m.split('-');
+    const btn = $('monthly-download'); btn.disabled = true; btn.textContent = 'Preparing…';
+    try { await download(`/portal/accounting/monthly-report/pdf?year=${+y}&month=${+mo}`, `SCS_Monthly_Cash_Report_${m}.pdf`); }
+    catch (err) { show($('monthly-msg'), err.message); }
     finally { btn.disabled = false; btn.textContent = 'Download PDF'; }
   });
 
