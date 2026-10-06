@@ -744,6 +744,11 @@ def _money(v) -> str:
     return f"EC${(v or 0):,.2f}"
 
 
+def _usd(v) -> str:
+    """EC$ amount shown in US$ at the fixed rate EC$2.6882 = US$1.00."""
+    return f"US${(v or 0) / 2.6882:,.2f}"
+
+
 def _fmt_date(s) -> str:
     d = parse_date(s)
     return d.strftime("%d %b %Y") if d else ""
@@ -796,18 +801,19 @@ def build_daily_report_pdf(d: date, rows: list) -> bytes:
                             title=f"Daily Cash Report {d.isoformat()}", author="Safe Cargo Services")
     el = [Paragraph("SAFE CARGO SERVICES", _H1), Paragraph("Sandy Ground, Anguilla", _H2),
           Paragraph("DAILY CASH REPORT", _H3), Spacer(1, 6),
-          Paragraph(f"<b>Date:</b> {d.strftime('%A, %d %B %Y')}", _META), Spacer(1, 6)]
+          Paragraph(f"<b>Date:</b> {d.strftime('%A, %d %B %Y')}", _META),
+          Paragraph("All amounts in US$ (exchange rate EC$2.6882 = US$1.00)", _META), Spacer(1, 6)]
 
     header = ["Tracking #", "Customer Name", "Customs Duties", "5% Fee", "AASPA/Security Fee", "Total", "Payment Method"]
     data = [header]
     for r in rows:
         data.append([r.get("tracking_number", ""), Paragraph(r.get("buyer_name") or "", _CELL),
-                     _money(r.get("customs_duties")), _money(r.get("clearance_fee")),
-                     _money(r.get("aaspa_security_fee")), _money(r.get("total_due")),
+                     _usd(r.get("customs_duties")), _usd(r.get("clearance_fee")),
+                     _usd(r.get("aaspa_security_fee")), _usd(r.get("total_due")),
                      r.get("payment_method_label") or ""])
     g = summary["grand_total"]
-    data.append(["GRAND TOTAL", f"{g['count']} payment(s)", _money(g["customs_duties"]), _money(g["clearance_fee"]),
-                 _money(g["aaspa_security_fee"]), _money(g["total"]), ""])
+    data.append(["GRAND TOTAL", f"{g['count']} payment(s)", _usd(g["customs_duties"]), _usd(g["clearance_fee"]),
+                 _usd(g["aaspa_security_fee"]), _usd(g["total"]), ""])
     if not rows:
         data.insert(1, ["", "No payments recorded for this date.", "", "", "", "", ""])
     widths = [42 * mm, 62 * mm, 30 * mm, 26 * mm, 36 * mm, 30 * mm, 42 * mm]
@@ -816,10 +822,10 @@ def build_daily_report_pdf(d: date, rows: list) -> bytes:
     el.append(Paragraph("Subtotals by Payment Method", _SEC))
     sdata = [["Payment Method", "Payments", "Customs Duties", "5% Fee", "AASPA/Security Fee", "Total"]]
     for s in summary["subtotals"]:
-        sdata.append([s["label"], str(s["count"]), _money(s["customs_duties"]), _money(s["clearance_fee"]),
-                      _money(s["aaspa_security_fee"]), _money(s["total"])])
-    sdata.append(["GRAND TOTAL", str(g["count"]), _money(g["customs_duties"]), _money(g["clearance_fee"]),
-                  _money(g["aaspa_security_fee"]), _money(g["total"])])
+        sdata.append([s["label"], str(s["count"]), _usd(s["customs_duties"]), _usd(s["clearance_fee"]),
+                      _usd(s["aaspa_security_fee"]), _usd(s["total"])])
+    sdata.append(["GRAND TOTAL", str(g["count"]), _usd(g["customs_duties"]), _usd(g["clearance_fee"]),
+                  _usd(g["aaspa_security_fee"]), _usd(g["total"])])
     el.append(_table(sdata, [50 * mm, 24 * mm, 34 * mm, 30 * mm, 38 * mm, 34 * mm],
                      money_cols=(1, 2, 3, 4, 5), total_rows=1))
     doc.build(el, onFirstPage=_footer, onLaterPages=_footer)

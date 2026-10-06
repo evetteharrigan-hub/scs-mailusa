@@ -558,10 +558,10 @@
     try {
       const res = await api('/portal/accounting/daily-report?date=' + d);
       const j = await res.json();
-      const g = j.grand_total;
+      const g = j.grand_total; const usd = v => 'US$' + ((v || 0) / 2.6882).toFixed(2);
       el.innerHTML = g.count
-        ? `<b>${g.count}</b> payment(s) · Grand total <b style="color:var(--maroon)">${money(g.total)}</b><br>` +
-          j.subtotals.map(s => `${esc(s.label)}: ${money(s.total)} (${s.count})`).join(' · ')
+        ? `<b>${g.count}</b> payment(s) · Grand total <b style="color:var(--maroon)">${usd(g.total)}</b><br>` +
+          j.subtotals.map(s => `${esc(s.label)}: ${usd(s.total)} (${s.count})`).join(' · ')
         : 'No payments recorded for this date.';
     } catch (err) { el.textContent = err.message; }
   }
