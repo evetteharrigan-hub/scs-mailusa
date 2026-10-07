@@ -2031,6 +2031,32 @@ async def invoice_pdf(invoice_id: int):
                              headers={"Content-Disposition": f'inline; filename="SCS_Invoice_{invoice_id}.pdf"'})
 
 
+@app.get("/portal/accounting/invoice-pdf/{tracking}")
+async def portal_invoice_pdf(tracking: str, user: dict = Depends(portal_module.accounting_user)):
+    """Customer invoice PDF for a processed shipment, built from the portal record (for printing)."""
+    portal_module._require_db()
+    with portal_module.get_conn() as conn:
+        cur = conn.cursor(cursor_factory=portal_module.psycopg2.extras.RealDictCursor)
+        cur.execute("""SELECT tracking_number, buyer_name, buyer_address, buyer_phone, buyer_email, shipper_name,
+                              description, date_of_arrival, cif_value, customs_duties
+                       FROM shipments WHERE tracking_number = %s""", (tracking.strip(),))
+        r = cur.fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="Shipment not found.")
+    if not (r["customs_duties"] or 0) > 0:
+        raise HTTPException(status_code=400, detail="Process the invoice (enter customs duties) before printing.")
+    arrival = r["date_of_arrival"].strftime("%B %d, %Y").replace(" 0", " ") if r["date_of_arrival"] else ""
+    pdf_bytes = generate_customer_invoice_pdf(
+        tracking_number=r["tracking_number"], customer_name=r["buyer_name"] or "", address=r["buyer_address"] or "",
+        telephone=r["buyer_phone"] or "", email=r["buyer_email"] or "", arrival_date=arrival,
+        shipper_name=r["shipper_name"] or "", shipper_invoice_number=r["tracking_number"],
+        description=r["description"] or "", total_order_value=float(r["cif_value"] or 0),
+        customs_duties=float(r["customs_duties"]))
+    name = re.sub(r'[^A-Z0-9]', '_', (r["buyer_name"] or "").upper().strip()).strip('_')
+    return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
+                             headers={"Content-Disposition": f'inline; filename="SCS_Invoice_{r["tracking_number"]}_{name}.pdf"'})
+
+
 @app.post("/generate-customer-invoice")
 async def generate_customer_invoice(
     tracking_number: str = Form(...),

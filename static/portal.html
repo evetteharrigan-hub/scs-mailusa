@@ -204,7 +204,10 @@
         <h4 style="margin:0 0 12px;color:var(--maroon)" id="proc-heading">Process Invoice</h4>
         <form id="proc-form">
           <div class="field"><label for="proc-duties">Customs Duties (EC$)</label><input type="number" step="0.01" min="0.01" id="proc-duties" required></div>
-          <div class="modal-actions"><button type="submit" class="btn btn-gold" id="proc-btn">Process</button></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-light hidden" id="print-btn">Print Invoice</button>
+            <button type="submit" class="btn btn-gold" id="proc-btn">Process</button>
+          </div>
         </form>
       </div>
       <div id="pay-section" class="hidden">
@@ -498,6 +501,7 @@
       $('proc-heading').textContent = r.processed ? 'Correct Customs Duties' : 'Process Invoice';
       $('proc-btn').textContent = r.processed ? 'Update Duties' : 'Process';
       $('proc-duties').value = r.processed ? r.customs_duties : '';
+      $('print-btn').classList.toggle('hidden', !r.processed);
     }
     if (withPayment && session.role === 'accounting' && r.processed) {
       $('pay-section').classList.remove('hidden');
@@ -521,6 +525,22 @@
       renderDetail(true);
       show($('detail-msg'), `Invoice processed. Total due ${money(current.total_due)}.`, 'ok');
       acSearch();
+    } catch (err) { show($('detail-msg'), err.message); }
+    finally { btn.disabled = false; }
+  });
+
+  $('print-btn').addEventListener('click', async () => {
+    if (!current) return;
+    const btn = $('print-btn'); btn.disabled = true; hide($('detail-msg'));
+    try {
+      const res = await api('/portal/accounting/invoice-pdf/' + encodeURIComponent(current.tracking_number));
+      const url = URL.createObjectURL(await res.blob());
+      const frame = document.createElement('iframe');
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+      frame.src = url;
+      frame.onload = () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { window.open(url, '_blank'); } };
+      document.body.appendChild(frame);
+      setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 60000);
     } catch (err) { show($('detail-msg'), err.message); }
     finally { btn.disabled = false; }
   });
