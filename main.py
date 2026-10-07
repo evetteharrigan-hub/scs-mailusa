@@ -733,6 +733,12 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
                      "KR": "SOUTH KOREA", "HK": "HONG KONG", "TW": "TAIWAN", "IN": "INDIA",
                      "AU": "AUSTRALIA", "BR": "BRAZIL", "AE": "UNITED ARAB EMIRATES"}
     shipper_country = country_names.get(shipper_country_code, shipper_country_code)
+    # ASYCUDA's Country_of_origin_code needs the 2-letter code (CN), never the name (CHINA)
+    _name_to_code = {name: code for code, name in country_names.items()}
+    _name_to_code.update({"USA": "US", "UNITED STATES OF AMERICA": "US", "PEOPLE'S REPUBLIC OF CHINA": "CN",
+                          "UK": "GB", "GREAT BRITAIN": "GB", "KOREA": "KR"})
+    origin_country_code = (shipper_country_code if len(shipper_country_code) == 2
+                           else _name_to_code.get(shipper_country_code, shipper_country_code))
     ddp_ddu = safe_str(row_data.get("ddp_ddu", "")).strip().upper()
     if not ddp_ddu:
         ddp_ddu = "FOB"
@@ -1087,7 +1093,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
         x.append('</Tarification>')
         
         x.append('<Goods_description>')
-        x.append(f'<Country_of_origin_code>{shipper_country}</Country_of_origin_code>')
+        x.append(f'<Country_of_origin_code>{origin_country_code}</Country_of_origin_code>')
         x.append('<Country_of_origin_region><null/></Country_of_origin_region>')
         x.append('<Description_of_goods>- - Other</Description_of_goods>')
         x.append(f'<Commercial_Description>{item_desc}</Commercial_Description>')
