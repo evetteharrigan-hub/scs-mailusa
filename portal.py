@@ -157,6 +157,7 @@ def init_db() -> bool:
             cur.execute("""DELETE FROM invoices a USING invoices b
                            WHERE a.tracking_number = b.tracking_number AND a.id < b.id""")
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_tracking ON invoices (tracking_number)")
+            cur.execute("UPDATE shipments SET date_of_arrival = created_at::date WHERE date_of_arrival IS NULL")
             # Migrate older schema that had two separate $10 fees -> one field
             cur.execute("""
                 SELECT column_name FROM information_schema.columns
@@ -286,7 +287,7 @@ def upsert_shipments(rows: list, arrival_date: str = "", duties_map: Optional[di
     """Insert/update shipments from spreadsheet rows. Never raises (generation must not fail
     because the DB is down). Existing duties / payment info are never wiped by blank values."""
     duties_map = duties_map or {}
-    arrival = parse_date(arrival_date)
+    arrival = parse_date(arrival_date) or today_ast()  # never save a shipment without an arrival date
     records = []
     for row in rows or []:
         tracking = str(row.get("tracking_number") or "").strip()

@@ -832,6 +832,12 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <div className="mt-4">
+                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
+                                <input type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)}
+                                    className="input-warm w-full md:w-64 px-4 py-2 border rounded-lg" />
+                                <p className="text-xs text-gray-500 mt-1">Shown in the accounting and warehouse portals. If left blank, today's date is used.</p>
+                            </div>
                             <div className="mt-6 flex justify-between">
                                 <button onClick={() => setStep(2)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
                                     <i className="fas fa-arrow-left mr-2"></i>Back
