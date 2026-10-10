@@ -2842,4 +2842,15 @@ async def portal():
 app.include_router(portal_module.router)
 app.include_router(portal_module.history_router)
 
+@app.middleware("http")
+async def no_stale_pages(request, call_next):
+    """Make browsers re-check the app pages on every load, so a new deploy shows up without Ctrl+F5."""
+    response = await call_next(request)
+    path = request.url.path
+    if request.method == "GET" and (path == "/" or path.endswith(".html") or path.startswith("/portal")) \
+            and "application/json" not in response.headers.get("content-type", ""):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
