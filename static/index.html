@@ -633,7 +633,7 @@
                             </h3>
                             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5 text-sm text-amber-800">
                                 <i className="fas fa-info-circle mr-1"></i>
-                                Enter the shipment details once, including the Manifest Reference from the master waybill. One download gives you the waybills and declarations in separate folders.
+                                Enter all the shipment details once, including the Manifest Reference from the master waybill. One download gives you the waybills and declarations in separate folders.
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
@@ -654,6 +654,11 @@
                                 <div>
                                     <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Departure</label>
                                     <input type="date" value={info.date_of_departure} onChange={(e) => handleChange('date_of_departure', e.target.value)}
+                                        className="input-warm w-full px-4 py-2 border rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
+                                    <input type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)}
                                         className="input-warm w-full px-4 py-2 border rounded-lg" />
                                 </div>
                                 <div className="md:col-span-2">
@@ -769,13 +774,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <div className="mt-4">
-                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
-                                <input type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)}
-                                    className="input-warm w-full md:w-64 px-4 py-2 border rounded-lg" />
-                                <p className="text-xs text-gray-500 mt-1">Shown in the accounting and warehouse portals. If left blank, today's date is used.</p>
-                            </div>
-                            <div className="mt-6 flex justify-between">
+                                                        <div className="mt-6 flex justify-between">
                                 <button onClick={() => setStep(2)} className="px-5 py-2 bg-gray-100 text-asian-charcoal rounded-lg hover:bg-gray-200 flex items-center transition-colors">
                                     <i className="fas fa-arrow-left mr-2"></i>Back
                                 </button>
@@ -845,16 +844,6 @@
                                         ))}
                                     </tbody>
                                 </table>
-                            </div>
-
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-asian-charcoal mb-1">Date of Arrival</label>
-                                <input
-                                    type="date"
-                                    value={arrivalDate}
-                                    onChange={(e) => setArrivalDate(e.target.value)}
-                                    className="input-warm w-full md:w-64 px-4 py-2 border rounded-lg"
-                                />
                             </div>
 
                             <div className="flex justify-end">
@@ -1931,7 +1920,7 @@ Sandy Ground, Anguilla`
 
         // ─── Main App with Tabs ────────────────────────────────────────
         function MainApp({ onSignOut }) {
-            const [activeTab, setActiveTab] = useState('waybills');
+            const [activeTab, setActiveTab] = useState('declarations');
             const [waybillForm, setWaybillForm] = useState({ master_awb: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [decForm, setDecForm] = useState({ master_awb: '', manifest_reference: '', voyage_number: '', date_of_departure: '', carrier_name: '' });
             const [history, setHistory] = useState([]);
@@ -2043,7 +2032,7 @@ Sandy Ground, Anguilla`
                 } else {
                     setRestoredDecData([]);
                     setRestoredHistoryId(null);
-                    setActiveTab('waybills');
+                    setActiveTab('declarations');
                 }
             };
             const deleteHistory = async (id) => {
@@ -2097,14 +2086,9 @@ Sandy Ground, Anguilla`
                     {/* Tabs */}
                     <div className="flex justify-start md:justify-center overflow-x-auto bg-asian-red rounded-b-lg -mx-4 px-4 shadow-md">
                         <button
-                            onClick={() => setActiveTab('waybills')}
-                            className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'waybills' ? 'tab-active' : 'tab-inactive'}`}>
-                            <i className="fas fa-file-alt mr-2"></i>House Waybills
-                        </button>
-                        <button
                             onClick={() => setActiveTab('declarations')}
                             className={`shrink-0 whitespace-nowrap px-6 py-3 text-sm transition-colors uppercase tracking-wider ${activeTab === 'declarations' ? 'tab-active' : 'tab-inactive'}`}>
-                            <i className="fas fa-file-invoice mr-2"></i>Declarations
+                            <i className="fas fa-file-invoice mr-2"></i>Waybills + Declarations
                         </button>
                         <button
                             onClick={() => setActiveTab('manifest')}
@@ -2125,10 +2109,8 @@ Sandy Ground, Anguilla`
 
                     {/* Workflow hint */}
                     <div className="mb-6 mt-6 text-center text-xs text-gray-400">
-                        {activeTab === 'waybills'
-                            ? 'Waybills only. To create waybills and declarations together from one upload, use the Declarations tab.'
-                            : activeTab === 'declarations'
-                            ? 'Enter the details and upload the spreadsheet once: the app creates waybills and declarations together, in separate folders.'
+                        {activeTab === 'declarations'
+                            ? 'Enter all the details once, including the Manifest Reference. One upload creates the waybills and declarations in separate folders.'
                             : activeTab === 'manifest'
                             ? 'Generate a professional cargo manifest PDF from your shipment spreadsheet.'
                             : activeTab === 'history'
@@ -2137,8 +2119,7 @@ Sandy Ground, Anguilla`
                     </div>
 
                     {/* Tab Content */}
-                    {activeTab === 'waybills' ? <WaybillsTab info={waybillForm} setInfo={setWaybillForm} onGenerated={handleGenerated} />
-                        : activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} restoredDutiesMap={restoredDutiesMap} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} onDutiesChanged={saveDutiesToHistory} />
+                    {activeTab === 'declarations' ? <DeclarationsTab restoredData={restoredDecData} restoredDutiesMap={restoredDutiesMap} onRestoredDataUsed={() => setRestoredDecData([])} info={decForm} setInfo={setDecForm} onGenerated={handleGenerated} onDutiesChanged={saveDutiesToHistory} />
                         : activeTab === 'manifest' ? <ManifestTab />
                         : activeTab === 'history' ? <HistoryTab history={history} loading={historyLoading} error={historyError} onLoad={loadDetails} onDelete={deleteHistory} onClear={clearHistory} />
                         : <CustomerInvoiceTab history={history} historyLoading={historyLoading} saveToHistory={saveToHistory} />}
