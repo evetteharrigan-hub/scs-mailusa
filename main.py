@@ -1248,6 +1248,8 @@ async def generate_xmls(
     carrier_name: str = Form(""),
     manifest_reference: str = Form(""),
     invoice_zip: Optional[UploadFile] = File(default=None),
+    arrival_date: str = Form(""),
+    duties_map: str = Form("{}"),
 ):
     """Generate ASYCUDA XML files (both waybills + declarations) from uploaded spreadsheet and optional invoice ZIP.
     Legacy combined endpoint - kept for backward compatibility."""
@@ -1312,11 +1314,19 @@ async def generate_xmls(
             if matched_invoice and pdf_data:
                 for pdf_name, pdf_bytes_raw in pdf_data:
                     if tracking.upper() in pdf_name.upper():
-                        zf.writestr(f"invoices/{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
+                        zf.writestr(f"invoices/{buyer_clean}_{tracking}_invoice.pdf", pdf_bytes_raw)
                         break
     
     zip_buffer.seek(0)
-    
+
+    # Record shipments in the portal DB (never blocks XML generation)
+    try:
+        _duties = json.loads(duties_map or "{}")
+    except json.JSONDecodeError:
+        _duties = {}
+    upsert_shipments(rows, arrival_date, _duties,
+                     shipment_info["manifest_reference"], shipment_info["voyage_number"])
+
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
@@ -1450,7 +1460,7 @@ async def generate_declarations(
             if matched_invoice and pdf_data:
                 for pdf_name, pdf_bytes_raw in pdf_data:
                     if tracking.upper() in pdf_name.upper():
-                        zf.writestr(f"{tracking}_{buyer_clean}_invoice.pdf", pdf_bytes_raw)
+                        zf.writestr(f"{buyer_clean}_{tracking}_invoice.pdf", pdf_bytes_raw)
                         break
     
     zip_buffer.seek(0)
@@ -2489,7 +2499,7 @@ async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
                         tracking = lines[i + 1].strip()
                 name_clean = _clean_name_for_file(bill_to)
                 if tracking and name_clean:
-                    filename = f"{tracking}_{name_clean}_invoice.pdf"
+                    filename = f"{name_clean}_{tracking}_invoice.pdf"
                 elif tracking:
                     filename = f"{tracking}_invoice.pdf"
                 else:
@@ -2500,7 +2510,7 @@ async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
                 consignee = _extract_consignee_from_page(text)
                 consignee_clean = _clean_name_for_file(consignee)
                 if tracking:
-                    filename = f"{tracking}_{consignee_clean}_waybill.pdf" if consignee_clean else f"{tracking}_waybill.pdf"
+                    filename = f"{consignee_clean}_{tracking}_waybill.pdf" if consignee_clean else f"{tracking}_waybill.pdf"
                 else:
                     filename = f"page_{page_num + 1}_{consignee_clean}_waybill.pdf" if consignee_clean else f"page_{page_num + 1}_waybill.pdf"
 
