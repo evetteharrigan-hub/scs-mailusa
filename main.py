@@ -1256,6 +1256,8 @@ async def generate_xmls(
     
     if not master_awb or master_awb.strip() == "":
         raise HTTPException(status_code=400, detail="Master AWB / BOL number is required and cannot be empty.")
+    if not manifest_reference or manifest_reference.strip() == "":
+        raise HTTPException(status_code=400, detail="Manifest Reference is required (it is on the master waybill).")
     
     xlsx_bytes = await xlsx_file.read()
     rows = parse_xlsx(xlsx_bytes)
