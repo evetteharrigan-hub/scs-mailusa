@@ -1303,10 +1303,10 @@ async def generate_xmls(
             
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
-            zf.writestr(f"waybills/{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
+            zf.writestr(f"waybills/{buyer_clean}_{tracking}_waybill.xml", waybill_xml)
             
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
-            zf.writestr(f"declarations/{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
+            zf.writestr(f"declarations/{buyer_clean}_{tracking}_declaration.xml", declaration_xml)
             
             # Include renamed invoice PDF if available
             if matched_invoice and pdf_data:
@@ -1362,7 +1362,7 @@ async def generate_waybills(
             tracking = safe_str(row.get("tracking_number", f"ROW_{idx}"))
             waybill_xml = generate_waybill_xml(row, shipment_info, idx)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
-            zf.writestr(f"{tracking}_{buyer_clean}_waybill.xml", waybill_xml)
+            zf.writestr(f"{buyer_clean}_{tracking}_waybill.xml", waybill_xml)
 
     
     zip_buffer.seek(0)
@@ -1445,7 +1445,7 @@ async def generate_declarations(
             
             declaration_xml = generate_declaration_xml(row, shipment_info, idx, invoice=matched_invoice)
             buyer_clean = re.sub(r'[^A-Z0-9]', '_', safe_str(row.get("buyer_name","")).upper().strip()).strip('_')
-            zf.writestr(f"{tracking}_{buyer_clean}_declaration.xml", declaration_xml)
+            zf.writestr(f"{buyer_clean}_{tracking}_declaration.xml", declaration_xml)
             # Include renamed invoice PDF if available
             if matched_invoice and pdf_data:
                 for pdf_name, pdf_bytes_raw in pdf_data:
