@@ -398,6 +398,7 @@
 
             const goStep2 = () => {
                 if (!info.master_awb.trim()) { setError('Master AWB / BOL Number is required'); return; }
+                if (!info.manifest_reference.trim()) { setError('Manifest Reference is required (it is on the master waybill)'); return; }
                 setError(''); setStep(2);
             };
 
@@ -632,7 +633,7 @@
                             </h3>
                             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5 text-sm text-amber-800">
                                 <i className="fas fa-info-circle mr-1"></i>
-                                Enter the shipment details once. One download gives you the waybills and declarations in separate folders.
+                                Enter the shipment details once, including the Manifest Reference from the master waybill. One download gives you the waybills and declarations in separate folders.
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
@@ -641,7 +642,7 @@
                                         className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., 176-12345678" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Manifest Reference <span className="text-gray-400 font-normal">(optional, add it if you already have it from ASYCUDA)</span></label>
+                                    <label className="block text-sm font-medium text-asian-charcoal mb-1">Manifest Reference <span className="text-asian-crimson">*</span></label>
                                     <input type="text" value={info.manifest_reference} onChange={(e) => handleChange('manifest_reference', e.target.value)}
                                         className="input-warm w-full px-4 py-2 border rounded-lg" placeholder="e.g., MAN-2024-001" />
                                 </div>
