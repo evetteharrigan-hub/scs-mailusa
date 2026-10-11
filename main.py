@@ -2495,10 +2495,14 @@ async def split_waybills_pdf(waybill_pdf: UploadFile = File(...)):
                 tracking = ""
                 lines = [l.strip() for l in text.split("\n") if l.strip()]
                 for i, line in enumerate(lines):
-                    if line == "Bill To" and i + 1 < len(lines):
+                    label = line.rstrip(":").strip().lower()
+                    if label == "bill to" and i + 1 < len(lines) and not bill_to:
                         bill_to = lines[i + 1].strip()
-                    if line == "Tracking Number" and i + 1 < len(lines):
+                    if label == "tracking number" and i + 1 < len(lines) and not tracking:
                         tracking = lines[i + 1].strip()
+                if not tracking:
+                    _t = re.search(r'\b([A-Z]{2,5}\d{6,}[A-Z]{0,3})\b', text)
+                    tracking = _t.group(1) if _t else ""
                 name_clean = _clean_name_for_file(bill_to)
                 if tracking and name_clean:
                     filename = f"{name_clean}_{tracking}_invoice.pdf"
