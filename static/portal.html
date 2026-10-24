@@ -205,6 +205,7 @@
         <h4 style="margin:0 0 12px;color:var(--maroon)" id="proc-heading">Process Invoice</h4>
         <form id="proc-form">
           <div class="field"><label for="proc-duties">Customs Duties (EC$)</label><input type="number" step="0.01" min="0.01" id="proc-duties" required></div>
+          <div class="field"><label for="proc-assessment">Assessment # C <small style="font-weight:400;color:var(--muted)">(optional)</small></label><input type="text" inputmode="numeric" pattern="[0-9]*" id="proc-assessment" placeholder="Numbers only"></div>
           <div class="modal-actions">
             <button type="button" class="btn btn-light hidden" id="print-btn">Print Invoice</button>
             <button type="submit" class="btn btn-gold" id="proc-btn">Process</button>
@@ -489,6 +490,7 @@
       ['Voyage / Flight', esc(r.voyage_number) || '—'],
       ['CIF Value', r.cif_value ? '$' + Number(r.cif_value).toFixed(2) : '—'],
       ['Customs Duties', r.processed ? moneyBoth(r.customs_duties) : 'Awaiting accounting'],
+      ['Assessment # C', esc(r.assessment_c) || '—'],
       ['5% Clearance Fee', r.processed ? moneyBoth(r.clearance_fee) : '—'],
       ['AASPA/Security Fee', r.processed ? moneyBoth(r.aaspa_security_fee) : '—'],
       ['Total Due', r.processed ? `<span class="total">${moneyBoth(r.total_due)}</span>` : '—'],
@@ -503,6 +505,7 @@
       $('proc-heading').textContent = r.processed ? 'Correct Customs Duties' : 'Process Invoice';
       $('proc-btn').textContent = r.processed ? 'Update Duties' : 'Process';
       $('proc-duties').value = r.processed ? r.customs_duties : '';
+      $('proc-assessment').value = r.assessment_c || '';
       $('print-btn').classList.toggle('hidden', !r.processed);
     }
     if (withPayment && session.role === 'accounting' && r.processed) {
@@ -514,6 +517,7 @@
     }
   }
 
+  $('proc-assessment').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
   $('proc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!current) return;
@@ -521,7 +525,7 @@
     try {
       const res = await api('/portal/accounting/process', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tracking_number: current.tracking_number, customs_duties: parseFloat($('proc-duties').value) })
+        body: JSON.stringify({ tracking_number: current.tracking_number, customs_duties: parseFloat($('proc-duties').value), assessment_c: $('proc-assessment').value.trim() })
       });
       current = (await res.json()).shipment;
       renderDetail(true);

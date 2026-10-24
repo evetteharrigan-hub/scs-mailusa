@@ -153,6 +153,7 @@ def init_db() -> bool:
                 cur.execute(stmt)
             for column in ("buyer_address", "buyer_phone", "buyer_email", "shipper_name"):
                 cur.execute(f"ALTER TABLE shipments ADD COLUMN IF NOT EXISTS {column} TEXT")
+            cur.execute("ALTER TABLE shipments ADD COLUMN IF NOT EXISTS assessment_c TEXT")
             cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS invoice_form_data JSONB")
             cur.execute("""DELETE FROM invoices a USING invoices b
                            WHERE a.tracking_number = b.tracking_number AND a.id < b.id""")
@@ -452,7 +453,7 @@ async def clear_history():
 
 # ─── Warehouse ─────────────────────────────────────────────────────────────────
 
-SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, description, date_of_arrival, cif_value, customs_duties,
+SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, assessment_c, description, date_of_arrival, cif_value, customs_duties,
     (COALESCE(customs_duties, 0) > 0) AS processed,
     clearance_fee, aaspa_security_fee, total_due, date_paid, payment_method, paid,
     manifest_reference, voyage_number, created_at"""
@@ -497,7 +498,7 @@ async def warehouse_get(tracking: str, user: dict = Depends(any_user)):
 @router.get("/accounting/search")
 async def accounting_search(q: str = "", user: dict = Depends(accounting_user)):
     rows = _search(q)
-    keys = ("tracking_number", "buyer_name", "buyer_phone", "date_of_arrival", "customs_duties", "clearance_fee",
+    keys = ("tracking_number", "buyer_name", "buyer_phone", "assessment_c", "date_of_arrival", "customs_duties", "clearance_fee",
             "aaspa_security_fee", "total_due", "paid", "date_paid", "payment_method",
             "payment_method_label", "description", "days_outstanding", "processed")
     return [{k: r.get(k) for k in keys if k in r} for r in rows]
@@ -506,13 +507,20 @@ async def accounting_search(q: str = "", user: dict = Depends(accounting_user)):
 class ProcessRequest(BaseModel):
     tracking_number: str
     customs_duties: float
+    assessment_c: str = ""
 
 
-def _apply_duties(cur, tracking: str, duties: float):
+def _apply_duties(cur, tracking: str, duties: float, assessment_c: Optional[str] = None):
+    """Set duties. assessment_c: None leaves the saved value alone, "" clears it, digits replace it."""
     fees = calc_fees(duties)
+    sets = ""
+    params = {**fees, "t": tracking}
+    if assessment_c is not None:
+        sets = ", assessment_c = %(ac)s"
+        params["ac"] = assessment_c or None
     cur.execute(f"""UPDATE shipments SET customs_duties = %(customs_duties)s, clearance_fee = %(clearance_fee)s,
-                    aaspa_security_fee = %(aaspa_security_fee)s, total_due = %(total_due)s
-                    WHERE tracking_number = %(t)s RETURNING {SHIPMENT_COLS}""", {**fees, "t": tracking})
+                    aaspa_security_fee = %(aaspa_security_fee)s, total_due = %(total_due)s{sets}
+                    WHERE tracking_number = %(t)s RETURNING {SHIPMENT_COLS}""", params)
     return cur.fetchone()
 
 
@@ -521,9 +529,12 @@ async def accounting_process(body: ProcessRequest, user: dict = Depends(accounti
     _require_db()
     if body.customs_duties != body.customs_duties or body.customs_duties <= 0:
         raise HTTPException(status_code=400, detail="Enter customs duties greater than 0.")
+    ac = (body.assessment_c or "").strip()
+    if ac and not ac.isdigit():
+        raise HTTPException(status_code=400, detail="Assessment # C must contain numbers only.")
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        r = _apply_duties(cur, body.tracking_number.strip(), body.customs_duties)
+        r = _apply_duties(cur, body.tracking_number.strip(), body.customs_duties, ac)
     if not r:
         raise HTTPException(status_code=404, detail="Shipment not found")
     return {"success": True, "shipment": _row_to_json(r)}
