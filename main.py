@@ -1637,6 +1637,7 @@ def generate_customer_invoice_pdf(
     description: str,
     total_order_value: float,
     customs_duties: float,
+    assessment_c: str = "",
 ) -> bytes:
     """Generate a professional customer invoice PDF and return as bytes."""
 
@@ -1746,7 +1747,7 @@ def generate_customer_invoice_pdf(
         ],
         [
             Paragraph(f"<b>Tracking #:</b> {tracking_number}", style_normal),
-            Paragraph("", style_normal),
+            Paragraph(f"<b>Assessment # C:</b> {assessment_c}" if assessment_c else "", style_normal),
         ],
     ]
     info_table = Table(info_data, colWidths=[90 * mm, 90 * mm])
@@ -2050,7 +2051,7 @@ async def portal_invoice_pdf(tracking: str, user: dict = Depends(portal_module.a
     with portal_module.get_conn() as conn:
         cur = conn.cursor(cursor_factory=portal_module.psycopg2.extras.RealDictCursor)
         cur.execute("""SELECT tracking_number, buyer_name, buyer_address, buyer_phone, buyer_email, shipper_name,
-                              description, date_of_arrival, cif_value, customs_duties
+                              description, date_of_arrival, cif_value, customs_duties, assessment_c
                        FROM shipments WHERE tracking_number = %s""", (tracking.strip(),))
         r = cur.fetchone()
     if not r:
@@ -2063,7 +2064,7 @@ async def portal_invoice_pdf(tracking: str, user: dict = Depends(portal_module.a
         telephone=r["buyer_phone"] or "", email=r["buyer_email"] or "", arrival_date=arrival,
         shipper_name=r["shipper_name"] or "", shipper_invoice_number=r["tracking_number"],
         description=r["description"] or "", total_order_value=float(r["cif_value"] or 0),
-        customs_duties=float(r["customs_duties"]))
+        customs_duties=float(r["customs_duties"]), assessment_c=(r.get("assessment_c") or ""))
     name = re.sub(r'[^A-Z0-9]', '_', (r["buyer_name"] or "").upper().strip()).strip('_')
     return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="SCS_Invoice_{r["tracking_number"]}_{name}.pdf"'})
