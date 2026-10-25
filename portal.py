@@ -459,26 +459,32 @@ SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, assessment_c, descr
     manifest_reference, voyage_number, created_at"""
 
 
-def _search(q: str, limit: int = 200, name_only: bool = False) -> list:
+def _search(q: str, limit: int = 1000, name_only: bool = False, arrival: str = "") -> list:
     _require_db()
     q = (q or "").strip()
+    arrival = (arrival or "").strip()
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        conds, params = [], []
         if q:
             like = f"%{q.lower()}%"
-            where = "LOWER(buyer_name) LIKE %s" if name_only else "(LOWER(buyer_name) LIKE %s OR LOWER(tracking_number) LIKE %s)"
-            params = (like,) if name_only else (like, like)
-            cur.execute(f"SELECT {SHIPMENT_COLS} FROM shipments WHERE {where} "
-                        f"ORDER BY date_of_arrival DESC NULLS LAST, buyer_name LIMIT {int(limit)}", params)
-        else:
-            cur.execute(f"SELECT {SHIPMENT_COLS} FROM shipments "
-                        f"ORDER BY date_of_arrival DESC NULLS LAST, created_at DESC LIMIT {int(limit)}")
+            if name_only:
+                conds.append("LOWER(buyer_name) LIKE %s"); params += [like]
+            else:
+                conds.append("(LOWER(buyer_name) LIKE %s OR LOWER(tracking_number) LIKE %s)"); params += [like, like]
+        if arrival:
+            d = parse_date(arrival)
+            if d:
+                conds.append("date_of_arrival = %s"); params.append(d)
+        where = ("WHERE " + " AND ".join(conds)) if conds else ""
+        cur.execute(f"SELECT {SHIPMENT_COLS} FROM shipments {where} "
+                    f"ORDER BY date_of_arrival DESC NULLS LAST, buyer_name LIMIT {int(limit)}", params)
         return [_row_to_json(r) for r in cur.fetchall()]
 
 
 @router.get("/shipments/search")
-async def warehouse_search(q: str = "", user: dict = Depends(any_user)):
-    return _search(q)
+async def warehouse_search(q: str = "", arrival: str = "", user: dict = Depends(any_user)):
+    return _search(q, arrival=arrival)
 
 
 @router.get("/shipments/{tracking}")
@@ -496,8 +502,8 @@ async def warehouse_get(tracking: str, user: dict = Depends(any_user)):
 # ─── Accounting ────────────────────────────────────────────────────────────────
 
 @router.get("/accounting/search")
-async def accounting_search(q: str = "", user: dict = Depends(accounting_user)):
-    rows = _search(q)
+async def accounting_search(q: str = "", arrival: str = "", user: dict = Depends(accounting_user)):
+    rows = _search(q, arrival=arrival)
     keys = ("tracking_number", "buyer_name", "buyer_phone", "assessment_c", "date_of_arrival", "customs_duties", "clearance_fee",
             "aaspa_security_fee", "total_due", "paid", "date_paid", "payment_method",
             "payment_method_label", "description", "days_outstanding", "processed")

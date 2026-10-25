@@ -133,6 +133,8 @@
           <input id="wh-q" placeholder="e.g. John Smith or 1Z999AA1…" autocomplete="off">
           <button class="btn btn-primary" type="submit">Search</button>
         </form>
+        <label style="font-size:13px;color:var(--muted)">Arrival date <input type="date" id="wh-date" style="padding:7px;border-radius:6px;border:1px solid #ccc"></label>
+        <button class="btn btn-light" type="button" id="wh-date-clear">All dates</button>
         <select id="wh-filter" style="padding:8px;border-radius:6px;border:1px solid #ccc">
           <option value="all">All</option><option value="notproc">Not Processed</option>
           <option value="unpaid">Unpaid</option><option value="paid">Paid</option></select>
@@ -154,6 +156,8 @@
           <input id="ac-q" placeholder="Customer name…" autocomplete="off">
           <button class="btn btn-primary" type="submit">Search</button>
         </form>
+        <label style="font-size:13px;color:var(--muted)">Arrival date <input type="date" id="ac-date" style="padding:7px;border-radius:6px;border:1px solid #ccc"></label>
+        <button class="btn btn-light" type="button" id="ac-date-clear">All dates</button>
         <select id="ac-filter" style="padding:8px;border-radius:6px;border:1px solid #ccc">
           <option value="all">All</option><option value="notproc">Not Processed</option>
           <option value="unpaid">Unpaid</option><option value="paid">Paid</option></select>
@@ -407,7 +411,7 @@
     const tbody = $('wh-results');
     tbody.innerHTML = '<tr><td colspan="6" class="empty">Searching…</td></tr>';
     try {
-      const res = await api('/portal/shipments/search?q=' + encodeURIComponent($('wh-q').value.trim()));
+      const res = await api('/portal/shipments/search?q=' + encodeURIComponent($('wh-q').value.trim()) + '&arrival=' + encodeURIComponent($('wh-date').value));
       const allWh = await res.json();
       const wf = $('wh-filter').value;
       whRows = allWh.filter(r => wf === 'all' || (wf === 'notproc' && !r.processed && !r.paid) || (wf === 'unpaid' && r.processed && !r.paid) || (wf === 'paid' && r.paid));
@@ -436,7 +440,7 @@
     const tbody = $('ac-results');
     tbody.innerHTML = '<tr><td colspan="5" class="empty">Searching…</td></tr>';
     try {
-      const res = await api('/portal/accounting/search?q=' + encodeURIComponent($('ac-q').value.trim()));
+      const res = await api('/portal/accounting/search?q=' + encodeURIComponent($('ac-q').value.trim()) + '&arrival=' + encodeURIComponent($('ac-date').value));
       const all = await res.json();
       const f = $('ac-filter').value;
       acRows = all.filter(r => f === 'all' || (f === 'notproc' && !r.processed && !r.paid) || (f === 'unpaid' && r.processed && !r.paid) || (f === 'paid' && r.paid));
@@ -552,6 +556,10 @@
   });
 
   $('ac-filter').addEventListener('change', acSearch);
+  $('ac-date').addEventListener('change', acSearch);
+  $('ac-date-clear').addEventListener('click', () => { $('ac-date').value = ''; acSearch(); });
+  $('wh-date').addEventListener('change', whSearch);
+  $('wh-date-clear').addEventListener('click', () => { $('wh-date').value = ''; whSearch(); });
   $('wh-filter').addEventListener('change', whSearch);
   $('po-btn').addEventListener('click', () => $('po-file').click());
   $('po-file').addEventListener('change', async () => {
