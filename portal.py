@@ -889,9 +889,14 @@ def build_monthly_report_pdf(year: int, month: int, rows: list) -> bytes:
         subtotals[pm] = subtotals.get(pm, 0) + r.get("total_due", 0)
 
     # Totals row
-    data.append(["", "", "TOTAL", "", "", "", f"{total/2.6882:.2f}", "", ""])
+    sum_duties = sum((r.get("customs_duties") or 0) for r in rows)
+    sum_fee = sum((r.get("clearance_fee") or 0) for r in rows)
+    sum_aaspa = sum((r.get("aaspa_security_fee") or 0) for r in rows)
+    data.append(["", "", "TOTAL", f"{sum_duties/2.6882:.2f}", f"{sum_fee/2.6882:.2f}", f"{sum_aaspa/2.6882:.2f}",
+                 f"{total/2.6882:.2f}", "", ""])
 
-    col_widths = [15, 90, 90, 65, 60, 70, 65, 85, 65]
+    # widths in mm; landscape A4 usable width is 267 mm
+    col_widths = [10, 40, 62, 26, 26, 28, 26, 28, 21]
     t = Table(data, colWidths=[w*mm for w in col_widths], repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), MAROON),
