@@ -62,6 +62,12 @@
   .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
   .badge.paid { background: var(--green-bg); color: var(--green); }
   .badge.unpaid { background: var(--red-bg); color: var(--red); }
+  .att-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .att-row input[type=checkbox] { width:18px; height:18px; accent-color: var(--maroon); }
+  .att-row select { flex:1; padding:7px; border-radius:6px; border:1px solid #ccc; }
+  .att-row .att-date { font-size:12px; color:var(--muted); min-width:92px; }
+  .att-mark { font-size:12px; white-space:nowrap; }
+  .att-mark b { color:#1d7a46; }
   .phone { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
   .badge.notproc { background: #fff3cd; color: #856404; }
   .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); }
@@ -169,7 +175,7 @@
       </div>
       <div class="table-wrap">
         <table class="data">
-          <thead><tr><th>Tracking #</th><th>Customer</th><th>Date of Arrival</th><th class="num">Total Due</th><th>Status</th></tr></thead>
+          <thead><tr><th>Tracking #</th><th>Customer</th><th>Date of Arrival</th><th class="num">Total Due</th><th>Status</th><th>Contact</th></tr></thead>
           <tbody id="ac-results"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
         </table>
       </div>
@@ -204,6 +210,13 @@
     <div class="modal-body">
       <div id="detail-msg" class="msg hidden"></div>
       <dl class="details" id="detail-list"></dl>
+      <div id="contact-section" class="hidden">
+        <div class="divider"></div>
+        <h4 style="margin:0 0 4px;color:var(--maroon)">Contact Attempts</h4>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Tick each attempt and choose how you reached out. It saves automatically.</div>
+        <div id="contact-rows"></div>
+        <div id="contact-msg" class="msg hidden" style="margin-top:8px"></div>
+      </div>
       <div id="proc-section" class="hidden">
         <div class="divider"></div>
         <h4 style="margin:0 0 12px;color:var(--maroon)" id="proc-heading">Process Invoice</h4>
@@ -438,7 +451,7 @@
   let acRows = [];
   async function acSearch() {
     const tbody = $('ac-results');
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Searching…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Searching…</td></tr>';
     try {
       const res = await api('/portal/accounting/search?q=' + encodeURIComponent($('ac-q').value.trim()) + '&arrival=' + encodeURIComponent($('ac-date').value));
       const all = await res.json();
@@ -451,15 +464,59 @@
           <td>${fmtDate(r.date_of_arrival)}</td>
           <td class="num">${r.processed ? money(r.total_due) : '—'}</td>
           <td>${badge(r.paid, r.processed)}</td>
-        </tr>`).join('') : '<tr><td colspan="5" class="empty">No customers found.</td></tr>';
+          <td>${r.paid ? '' : attMark(r)}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="empty">No customers found.</td></tr>';
       const unpaid = acRows.filter(r => !r.paid && r.processed);
       const notproc = acRows.filter(r => !r.processed && !r.paid).length;
       $('ac-count').textContent = acRows.length
         ? `${acRows.length} record(s) · ${notproc} not processed · ${unpaid.length} unpaid · outstanding ${money(unpaid.reduce((s, r) => s + (r.total_due || 0), 0))}` : '';
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(err.message)}</td></tr>`;
     }
   }
+
+  // ─── Contact attempts (accounting only; not processed / unpaid packages) ───
+  const CONTACT_METHODS = ['Called', 'No answer', 'Texted', 'Emailed', 'WhatsApp', 'Spoke with customer'];
+  function attMark(r) {
+    const a = r.contact_attempts || [];
+    const n = a.filter(x => x && x.done).length;
+    return `<span class="att-mark">${[0, 1, 2].map(i => (a[i] && a[i].done) ? '<b>✓</b>' : '☐').join(' ')}</span>`;
+  }
+  function renderContact() {
+    const r = current, sec = $('contact-section');
+    if (!(session.role === 'accounting' && !r.paid)) { sec.classList.add('hidden'); return; }
+    sec.classList.remove('hidden');
+    const a = r.contact_attempts || [];
+    $('contact-rows').innerHTML = [0, 1, 2].map(i => {
+      const x = a[i] || {};
+      return `<div class="att-row" data-i="${i}">
+        <input type="checkbox" id="att-c${i}" ${x.done ? 'checked' : ''} aria-label="Attempt ${i + 1}">
+        <label for="att-c${i}" style="min-width:74px;margin:0">Attempt ${i + 1}</label>
+        <select id="att-s${i}"><option value="">Choose…</option>${CONTACT_METHODS.map(m => `<option ${x.how === m ? 'selected' : ''}>${m}</option>`).join('')}</select>
+        <span class="att-date">${x.done && x.date ? fmtDate(x.date) : ''}</span>
+      </div>`;
+    }).join('');
+  }
+  async function saveContact(e) {
+    const row = e.target.closest('.att-row'); if (!row || !current) return;
+    const i = +row.dataset.i, chk = $('att-c' + i), sel = $('att-s' + i);
+    if (e.target === sel && sel.value && !chk.checked) chk.checked = true;   // choosing how = attempt made
+    if (e.target === chk && !chk.checked) sel.value = '';
+    const attempts = [0, 1, 2].map(k => ({ done: $('att-c' + k).checked, how: $('att-s' + k).value }));
+    hide($('contact-msg'));
+    try {
+      const res = await api('/portal/accounting/contact-attempts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tracking_number: current.tracking_number, attempts })
+      });
+      const s = (await res.json()).shipment;
+      current.contact_attempts = s.contact_attempts;
+      const idx = acRows.findIndex(x => x.tracking_number === s.tracking_number);
+      if (idx >= 0) { acRows[idx].contact_attempts = s.contact_attempts; const cell = document.querySelector(`#ac-results tr[data-i="${idx}"] td:last-child`); if (cell) cell.innerHTML = attMark(acRows[idx]); }
+      renderContact();
+    } catch (err) { show($('contact-msg'), err.message); }
+  }
+  $('contact-rows').addEventListener('change', saveContact);
   $('ac-search-form').addEventListener('submit', (e) => { e.preventDefault(); acSearch(); });
   $('ac-results').addEventListener('click', (e) => {
     const tr = e.target.closest('tr[data-i]'); if (tr) openDetail(acRows[+tr.dataset.i].tracking_number, true);
@@ -483,6 +540,7 @@
 
   function renderDetail(withPayment) {
     const r = current;
+    if (withPayment) renderContact(); else $('contact-section').classList.add('hidden');
     $('detail-title').textContent = r.buyer_name || r.tracking_number;
     const rows = [
       ['Tracking #', `<span class="mono">${esc(r.tracking_number)}</span>`],

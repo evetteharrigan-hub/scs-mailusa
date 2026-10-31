@@ -154,6 +154,7 @@ def init_db() -> bool:
             for column in ("buyer_address", "buyer_phone", "buyer_email", "shipper_name"):
                 cur.execute(f"ALTER TABLE shipments ADD COLUMN IF NOT EXISTS {column} TEXT")
             cur.execute("ALTER TABLE shipments ADD COLUMN IF NOT EXISTS assessment_c TEXT")
+            cur.execute("ALTER TABLE shipments ADD COLUMN IF NOT EXISTS contact_attempts JSONB")
             cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS invoice_form_data JSONB")
             cur.execute("""DELETE FROM invoices a USING invoices b
                            WHERE a.tracking_number = b.tracking_number AND a.id < b.id""")
@@ -453,7 +454,7 @@ async def clear_history():
 
 # ─── Warehouse ─────────────────────────────────────────────────────────────────
 
-SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, assessment_c, description, date_of_arrival, cif_value, customs_duties,
+SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, assessment_c, contact_attempts, description, date_of_arrival, cif_value, customs_duties,
     (COALESCE(customs_duties, 0) > 0) AS processed,
     clearance_fee, aaspa_security_fee, total_due, date_paid, payment_method, paid,
     manifest_reference, voyage_number, created_at"""
@@ -504,10 +505,51 @@ async def warehouse_get(tracking: str, user: dict = Depends(any_user)):
 @router.get("/accounting/search")
 async def accounting_search(q: str = "", arrival: str = "", user: dict = Depends(accounting_user)):
     rows = _search(q, arrival=arrival)
-    keys = ("tracking_number", "buyer_name", "buyer_phone", "assessment_c", "date_of_arrival", "customs_duties", "clearance_fee",
+    keys = ("tracking_number", "buyer_name", "buyer_phone", "assessment_c", "contact_attempts", "date_of_arrival", "customs_duties", "clearance_fee",
             "aaspa_security_fee", "total_due", "paid", "date_paid", "payment_method",
             "payment_method_label", "description", "days_outstanding", "processed")
     return [{k: r.get(k) for k in keys if k in r} for r in rows]
+
+
+CONTACT_METHODS = ["Called", "No answer", "Texted", "Emailed", "WhatsApp", "Spoke with customer"]
+
+
+class ContactAttempt(BaseModel):
+    done: bool = False
+    how: str = ""
+
+
+class ContactRequest(BaseModel):
+    tracking_number: str
+    attempts: List[ContactAttempt]
+
+
+@router.post("/accounting/contact-attempts")
+async def accounting_contact_attempts(body: ContactRequest, user: dict = Depends(accounting_user)):
+    """Save the 3 customer-contact attempts. The date is stamped when an attempt is first ticked."""
+    _require_db()
+    if len(body.attempts) != 3:
+        raise HTTPException(status_code=400, detail="Exactly 3 attempts are required.")
+    for a in body.attempts:
+        if a.how and a.how not in CONTACT_METHODS:
+            raise HTTPException(status_code=400, detail="Unknown contact method.")
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT contact_attempts FROM shipments WHERE tracking_number = %s", (body.tracking_number.strip(),))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        old = row["contact_attempts"] or [{}, {}, {}]
+        today = today_ast().isoformat()
+        out = []
+        for i, a in enumerate(body.attempts):
+            prev = old[i] if i < len(old) and isinstance(old[i], dict) else {}
+            date = (prev.get("date") or today) if a.done else None
+            out.append({"done": a.done, "how": a.how if a.done else "", "date": date})
+        cur.execute(f"UPDATE shipments SET contact_attempts = %s WHERE tracking_number = %s RETURNING {SHIPMENT_COLS}",
+                    (psycopg2.extras.Json(out), body.tracking_number.strip()))
+        r = cur.fetchone()
+    return {"success": True, "shipment": _row_to_json(r)}
 
 
 class ProcessRequest(BaseModel):
