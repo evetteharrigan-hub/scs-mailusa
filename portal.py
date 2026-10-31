@@ -675,6 +675,24 @@ async def accounting_mark_paid(body: MarkPaidRequest, user: dict = Depends(accou
     return {"success": True, "shipment": _row_to_json(r)}
 
 
+class UnpaidRequest(BaseModel):
+    tracking_number: str
+
+
+@router.post("/accounting/mark-unpaid")
+async def accounting_mark_unpaid(body: UnpaidRequest, user: dict = Depends(accounting_user)):
+    """Undo a payment recorded by mistake: clears paid, date and method."""
+    _require_db()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"""UPDATE shipments SET paid = FALSE, date_paid = NULL, payment_method = NULL
+                        WHERE tracking_number = %s RETURNING {SHIPMENT_COLS}""", (body.tracking_number.strip(),))
+        r = cur.fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return {"success": True, "shipment": _row_to_json(r)}
+
+
 def _daily_rows(d: date) -> list:
     _require_db()
     with get_conn() as conn:
