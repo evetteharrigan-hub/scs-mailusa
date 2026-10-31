@@ -68,7 +68,7 @@
   .att-row .att-date { font-size:12px; color:var(--muted); min-width:92px; }
   .att-mark { font-size:12px; white-space:nowrap; }
   .att-mark b { color:#1d7a46; }
-  .phone { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+  .phone { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .badge.notproc { background: #fff3cd; color: #856404; }
   .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); }
   .empty { text-align: center; color: var(--muted); padding: 30px; }
@@ -431,7 +431,7 @@
       tbody.innerHTML = whRows.length ? whRows.map((r, i) => `
         <tr data-i="${i}">
           <td class="mono">${esc(r.tracking_number)}</td>
-          <td>${esc(r.buyer_name)}${r.buyer_phone ? `<div class="phone">📞 ${esc(r.buyer_phone)}</div>` : ''}</td>
+          <td>${esc(r.buyer_name)}${(r.buyer_phone || r.buyer_email) ? `<div class="phone">${r.buyer_phone ? '📞 ' + esc(r.buyer_phone) : ''}${r.buyer_phone && r.buyer_email ? ' · ' : ''}${r.buyer_email ? '✉ ' + esc(r.buyer_email) : ''}</div>` : ''}</td>
           <td>${fmtDate(r.date_of_arrival)}</td>
           <td>${fmtDate(r.date_paid)}</td>
           <td class="desc hide-sm">${esc((r.description || '').slice(0, 90))}${(r.description || '').length > 90 ? '…' : ''}</td>
@@ -460,7 +460,7 @@
       tbody.innerHTML = acRows.length ? acRows.map((r, i) => `
         <tr data-i="${i}">
           <td class="mono">${esc(r.tracking_number)}</td>
-          <td>${esc(r.buyer_name)}${r.buyer_phone ? `<div class="phone">📞 ${esc(r.buyer_phone)}</div>` : ''}</td>
+          <td>${esc(r.buyer_name)}${(r.buyer_phone || r.buyer_email) ? `<div class="phone">${r.buyer_phone ? '📞 ' + esc(r.buyer_phone) : ''}${r.buyer_phone && r.buyer_email ? ' · ' : ''}${r.buyer_email ? '✉ ' + esc(r.buyer_email) : ''}</div>` : ''}</td>
           <td>${fmtDate(r.date_of_arrival)}</td>
           <td class="num">${r.processed ? money(r.total_due) : '—'}</td>
           <td>${badge(r.paid, r.processed)}</td>
@@ -546,6 +546,7 @@
       ['Tracking #', `<span class="mono">${esc(r.tracking_number)}</span>`],
       ['Customer Name', esc(r.buyer_name)],
       ['Telephone', esc(r.buyer_phone) || '—'],
+      ['Email', esc(r.buyer_email) || '—'],
       ['Description', esc(r.description) || '—'],
       ['Date of Arrival', fmtDate(r.date_of_arrival)],
       ['Manifest Reference', esc(r.manifest_reference) || '—'],

@@ -454,7 +454,7 @@ async def clear_history():
 
 # ─── Warehouse ─────────────────────────────────────────────────────────────────
 
-SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, assessment_c, contact_attempts, description, date_of_arrival, cif_value, customs_duties,
+SHIPMENT_COLS = """tracking_number, buyer_name, buyer_phone, buyer_email, assessment_c, contact_attempts, description, date_of_arrival, cif_value, customs_duties,
     (COALESCE(customs_duties, 0) > 0) AS processed,
     clearance_fee, aaspa_security_fee, total_due, date_paid, payment_method, paid,
     manifest_reference, voyage_number, created_at"""
@@ -505,7 +505,7 @@ async def warehouse_get(tracking: str, user: dict = Depends(any_user)):
 @router.get("/accounting/search")
 async def accounting_search(q: str = "", arrival: str = "", user: dict = Depends(accounting_user)):
     rows = _search(q, arrival=arrival)
-    keys = ("tracking_number", "buyer_name", "buyer_phone", "assessment_c", "contact_attempts", "date_of_arrival", "customs_duties", "clearance_fee",
+    keys = ("tracking_number", "buyer_name", "buyer_phone", "buyer_email", "assessment_c", "contact_attempts", "date_of_arrival", "customs_duties", "clearance_fee",
             "aaspa_security_fee", "total_due", "paid", "date_paid", "payment_method",
             "payment_method_label", "description", "days_outstanding", "processed")
     return [{k: r.get(k) for k in keys if k in r} for r in rows]
