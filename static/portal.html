@@ -147,8 +147,8 @@
       </div>
       <div class="table-wrap">
         <table class="data">
-          <thead><tr><th>Tracking #</th><th>Customer Name</th><th>Date of Arrival</th><th>Date Paid</th><th class="hide-sm">Description</th><th>Status</th></tr></thead>
-          <tbody id="wh-results"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          <thead><tr><th>Tracking #</th><th>Customer Name</th><th>Date of Arrival</th><th>Date Paid</th><th class="hide-sm">Description</th><th>Status</th><th>Contact</th></tr></thead>
+          <tbody id="wh-results"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
         </table>
       </div>
       <div class="count" id="wh-count"></div>
@@ -213,7 +213,7 @@
       <div id="contact-section" class="hidden">
         <div class="divider"></div>
         <h4 style="margin:0 0 4px;color:var(--maroon)">Contact Attempts</h4>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Tick each attempt and choose how you reached out. It saves automatically.</div>
+        <div id="contact-hint" style="font-size:12px;color:var(--muted);margin-bottom:10px">Tick each attempt and choose how you reached out. It saves automatically.</div>
         <div id="contact-rows"></div>
         <div id="contact-msg" class="msg hidden" style="margin-top:8px"></div>
       </div>
@@ -422,7 +422,7 @@
   let whRows = [];
   async function whSearch() {
     const tbody = $('wh-results');
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">Searching…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Searching…</td></tr>';
     try {
       const res = await api('/portal/shipments/search?q=' + encodeURIComponent($('wh-q').value.trim()) + '&arrival=' + encodeURIComponent($('wh-date').value));
       const allWh = await res.json();
@@ -436,10 +436,11 @@
           <td>${fmtDate(r.date_paid)}</td>
           <td class="desc hide-sm">${esc((r.description || '').slice(0, 90))}${(r.description || '').length > 90 ? '…' : ''}</td>
           <td>${badge(r.paid, r.processed)}</td>
-        </tr>`).join('') : '<tr><td colspan="6" class="empty">No packages found.</td></tr>';
+          <td>${r.paid ? '' : attMark(r)}</td>
+        </tr>`).join('') : '<tr><td colspan="7" class="empty">No packages found.</td></tr>';
       $('wh-count').textContent = whRows.length ? `${whRows.length} package(s) · ${whRows.filter(r => !r.processed && !r.paid).length} not processed` : '';
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(err.message)}</td></tr>`;
     }
   }
   $('wh-search-form').addEventListener('submit', (e) => { e.preventDefault(); whSearch(); });
@@ -484,9 +485,19 @@
   }
   function renderContact() {
     const r = current, sec = $('contact-section');
-    if (!(session.role === 'accounting' && !r.paid)) { sec.classList.add('hidden'); return; }
+    if (r.paid) { sec.classList.add('hidden'); return; }
     sec.classList.remove('hidden');
     const a = r.contact_attempts || [];
+    $('contact-hint').textContent = session.role === 'accounting' ? 'Tick each attempt and choose how you reached out. It saves automatically.' : 'Customer contact attempts for this package (view only).';
+    if (session.role !== 'accounting') {           // warehouse: view only
+      $('contact-rows').innerHTML = [0, 1, 2].map(i => {
+        const x = a[i] || {};
+        return `<div class="att-row"><span style="min-width:74px">Attempt ${i + 1}</span>` +
+          (x.done ? `<span class="att-mark"><b>✓</b> ${esc(x.how || '')}</span><span class="att-date">${x.date ? fmtDate(x.date) : ''}</span>`
+                  : '<span class="att-mark" style="color:var(--muted)">☐ Not yet</span>') + '</div>';
+      }).join('');
+      return;
+    }
     $('contact-rows').innerHTML = [0, 1, 2].map(i => {
       const x = a[i] || {};
       return `<div class="att-row" data-i="${i}">
@@ -540,7 +551,7 @@
 
   function renderDetail(withPayment) {
     const r = current;
-    if (withPayment) renderContact(); else $('contact-section').classList.add('hidden');
+    renderContact();
     $('detail-title').textContent = r.buyer_name || r.tracking_number;
     const rows = [
       ['Tracking #', `<span class="mono">${esc(r.tracking_number)}</span>`],
