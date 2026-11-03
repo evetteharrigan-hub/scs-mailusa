@@ -113,7 +113,7 @@ $('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('login').clic
 
 async function lists() {
   view('v-list'); clearInterval(S.t);
-  api('/last-voyage').then(r => r.json()).then(j => loadPorts('n', j.last)).catch(() => loadPorts('n'));
+  loadPorts('n');
   const l = await (await api('/manifests')).json();
   $('vlist').innerHTML = l.length ? `<div class="tbl"><table><thead><tr><th>Voyage</th><th>Date</th><th>Vessel</th><th>Entries</th><th>Kg</th><th>Status</th><th></th></tr></thead><tbody>${l.map(m => `<tr><td><b>${esc(m.voyage_number || m.manifest_number)}</b></td><td>${esc(m.date_of_departure || m.arrival_date || '')}</td><td>${esc(m.vessel)}</td><td>${m.count}</td><td>${m.weight.toFixed(2)}</td><td><span class="pill ${m.ballast ? '' : m.status}">${m.ballast ? '⚓ in ballast' : m.status}</span></td><td><button class="btn" style="min-height:40px;font-size:15px" data-open="${m.id}">Open</button></td></tr>`).join('')}</tbody></table></div>` : 'No voyages yet. The crew start them from their screen.';
 }

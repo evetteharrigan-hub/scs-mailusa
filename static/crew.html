@@ -161,7 +161,7 @@ async function enter(num, vessel, vdate) {
 function fmtD(iso) { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
 async function loadLast() {
   try { const l = (await (await api('/last-voyage')).json()).last;
-    if (l) await loadPorts('c', l); else await loadPorts('c'); $('lastv').innerHTML = l ? `Last voyage: <b>${esc(l.voyage_number || l.manifest_number)}</b> on <b>${esc(fmtD(l.date_of_departure || l.arrival_date))}</b>` + (l.ballast ? ' (in ballast, no cargo)' : ` (${l.count} BL${l.count === 1 ? '' : 's'})`) + '<div style="font-size:14px;color:var(--muted)">Enter the new voyage number below.</div>' : 'No previous voyage yet. This will be the first one.';
+    await loadPorts('c'); $('lastv').innerHTML = l ? `Last voyage: <b>${esc(l.voyage_number || l.manifest_number)}</b> on <b>${esc(fmtD(l.date_of_departure || l.arrival_date))}</b>` + (l.ballast ? ' (in ballast, no cargo)' : ` (${l.count} BL${l.count === 1 ? '' : 's'})`) + '<div style="font-size:14px;color:var(--muted)">Enter the new voyage number below.</div>' : 'No previous voyage yet. This will be the first one.';
   } catch (e) { $('lastv').textContent = 'Could not check the last voyage. You can still start one below.'; } }
 function ballastAsk() {
   const voy = $('mnum').value.trim(), d = $('vdate').value;
