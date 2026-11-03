@@ -59,8 +59,12 @@ def _init():
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE (manifest_id, bl_number))""")
-        for col in ("shipper", "shipper_address", "consignee_address", "consignee_phone"):
+        for col in ("shipper", "shipper_address", "consignee_address", "consignee_phone", "shipper_phone",
+                    "notify_name", "consignee_email", "freight_terms"):
             cur.execute(f"ALTER TABLE manifest_items ADD COLUMN IF NOT EXISTS {col} TEXT")
+        cur.execute("ALTER TABLE manifest_items ADD COLUMN IF NOT EXISTS cubic_feet NUMERIC(10,2)")
+        cur.execute("ALTER TABLE manifest_items ADD COLUMN IF NOT EXISTS freight_usd NUMERIC(10,2)")
+        cur.execute("ALTER TABLE live_parties ADD COLUMN IF NOT EXISTS email TEXT")
         cur.execute("""CREATE TABLE IF NOT EXISTS manifest_photos (
             id SERIAL PRIMARY KEY,
             item_id INTEGER NOT NULL REFERENCES manifest_items(id) ON DELETE CASCADE,
@@ -160,6 +164,10 @@ def _item(r):
             "weight": float(r["weight"]) if r["weight"] is not None else None,
             "shipper": r.get("shipper") or "", "shipper_address": r.get("shipper_address") or "",
             "consignee_address": r.get("consignee_address") or "", "consignee_phone": r.get("consignee_phone") or "",
+            "shipper_phone": r.get("shipper_phone") or "", "notify_name": r.get("notify_name") or "",
+            "consignee_email": r.get("consignee_email") or "", "freight_terms": r.get("freight_terms") or "",
+            "cubic_feet": float(r["cubic_feet"]) if r.get("cubic_feet") is not None else None,
+            "freight_usd": float(r["freight_usd"]) if r.get("freight_usd") is not None else None,
             "photos": r.get("photos", 0),
             "added_by": r["added_by"] or "", "edited_by": r["edited_by"] or "",
             "created_at": r["created_at"].astimezone(AST).strftime("%I:%M %p").lstrip("0"),
@@ -196,8 +204,14 @@ class NewItem(BaseModel):
     client_id: str = ""
     shipper: str = ""
     shipper_address: str = ""
+    shipper_phone: str = ""
     consignee_address: str = ""
     consignee_phone: str = ""
+    consignee_email: str = ""
+    notify_name: str = ""
+    cubic_feet: Optional[float] = None
+    freight_usd: Optional[float] = None
+    freight_terms: str = ""
     photos: List[str] = []
     thumbs: List[str] = []
 
@@ -211,6 +225,14 @@ def _check(body):
         raise HTTPException(status_code=400, detail="Pieces must be 1 or more.")
     if body.weight is not None and (body.weight != body.weight or body.weight < 0 or body.weight > 99999):
         raise HTTPException(status_code=400, detail="Weight looks wrong.")
+    for label, v in (("Cubic feet", body.cubic_feet), ("Freight", body.freight_usd)):
+        if v is not None and (v != v or v < 0 or v > 999999):
+            raise HTTPException(status_code=400, detail=f"{label} looks wrong.")
+    if body.freight_terms not in ("", "COLLECT", "PREPAID"):
+        raise HTTPException(status_code=400, detail="Freight must be COLLECT or PREPAID.")
+    em = (body.consignee_email or "").strip()
+    if em and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", em):
+        raise HTTPException(status_code=400, detail="That email address does not look right.")
 
 
 MAX_PHOTOS = 8
@@ -239,16 +261,17 @@ def _save_photos(cur, mid: int, iid: int, photos: List[str], thumbs: List[str], 
     cur.execute("UPDATE manifest_items SET updated_at = NOW() WHERE id = %s", (iid,))
 
 
-def _remember(cur, kind: str, name: str, address: str, phone: str = ""):
+def _remember(cur, kind: str, name: str, address: str, phone: str = "", email: str = ""):
     """Keep the shipper / consignee in the saved list. A later entry for the same name fills itself in."""
     name = (name or "").strip()[:120]
     if not name:
         return
-    cur.execute("""INSERT INTO live_parties (kind, name, address, phone) VALUES (%s,%s,%s,%s)
+    cur.execute("""INSERT INTO live_parties (kind, name, address, phone, email) VALUES (%s,%s,%s,%s,%s)
                    ON CONFLICT (kind, name) DO UPDATE SET
                      address = CASE WHEN EXCLUDED.address <> '' THEN EXCLUDED.address ELSE live_parties.address END,
                      phone = CASE WHEN EXCLUDED.phone <> '' THEN EXCLUDED.phone ELSE live_parties.phone END,
-                     updated_at = NOW()""", (kind, name, (address or "").strip(), (phone or "").strip()))
+                     email = CASE WHEN COALESCE(EXCLUDED.email, '') <> '' THEN EXCLUDED.email ELSE live_parties.email END,
+                     updated_at = NOW()""", (kind, name, (address or "").strip(), (phone or "").strip(), (email or "").strip().lower()))
 
 
 @router.get("/parties")
@@ -258,7 +281,7 @@ async def find_parties(kind: str = Query("consignee"), q: str = Query(""), user:
         raise HTTPException(status_code=400, detail="kind must be shipper or consignee")
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""SELECT id, name, address, phone FROM live_parties WHERE kind = %s AND LOWER(name) LIKE %s
+        cur.execute("""SELECT id, name, address, phone, email FROM live_parties WHERE kind = %s AND LOWER(name) LIKE %s
                        ORDER BY updated_at DESC LIMIT 8""", (kind, f"%{q.strip().lower()}%"))
         return cur.fetchall()
 
@@ -297,14 +320,17 @@ async def add_item(mid: int, body: NewItem, user: dict = Depends(any_live)):
         bl = m["next_bl"]
         cur.execute("UPDATE manifests SET next_bl = next_bl + 1 WHERE id = %s", (mid,))
         cur.execute("""INSERT INTO manifest_items (manifest_id, bl_number, client_id, consignee, description, pieces, weight,
-                       added_by, shipper, shipper_address, consignee_address, consignee_phone)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                       added_by, shipper, shipper_address, consignee_address, consignee_phone, shipper_phone, notify_name,
+                       consignee_email, cubic_feet, freight_usd, freight_terms)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
                     (mid, bl, cid, body.consignee.strip(), body.description.strip(), body.pieces, body.weight, who,
-                     body.shipper.strip(), body.shipper_address.strip(), body.consignee_address.strip(), body.consignee_phone.strip()))
+                     body.shipper.strip(), body.shipper_address.strip(), body.consignee_address.strip(), body.consignee_phone.strip(),
+                     body.shipper_phone.strip(), body.notify_name.strip(), body.consignee_email.strip().lower(),
+                     body.cubic_feet, body.freight_usd, body.freight_terms))
         r = cur.fetchone()
         _save_photos(cur, mid, r["id"], body.photos, body.thumbs, who)
-        _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone)
-        _remember(cur, "shipper", body.shipper, body.shipper_address)
+        _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone, body.consignee_email)
+        _remember(cur, "shipper", body.shipper, body.shipper_address, body.shipper_phone)
         r["photos"] = len(body.photos)
         return {"item": _item(r)}
 
@@ -317,15 +343,18 @@ async def edit_item(mid: int, iid: int, body: NewItem, user: dict = Depends(agen
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""UPDATE manifest_items SET consignee=%s, description=%s, pieces=%s, weight=%s,
                        shipper=%s, shipper_address=%s, consignee_address=%s, consignee_phone=%s,
+                       shipper_phone=%s, notify_name=%s, consignee_email=%s, cubic_feet=%s, freight_usd=%s, freight_terms=%s,
                        edited_by=%s, updated_at=NOW() WHERE id=%s AND manifest_id=%s RETURNING *""",
                     (body.consignee.strip(), body.description.strip(), body.pieces, body.weight,
                      body.shipper.strip(), body.shipper_address.strip(), body.consignee_address.strip(), body.consignee_phone.strip(),
+                     body.shipper_phone.strip(), body.notify_name.strip(), body.consignee_email.strip().lower(),
+                     body.cubic_feet, body.freight_usd, body.freight_terms,
                      (body.added_by or "agent").strip()[:40], iid, mid))
         r = cur.fetchone()
         if not r:
             raise HTTPException(status_code=404, detail="Entry not found.")
-        _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone)
-        _remember(cur, "shipper", body.shipper, body.shipper_address)
+        _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone, body.consignee_email)
+        _remember(cur, "shipper", body.shipper, body.shipper_address, body.shipper_phone)
         cur.execute("SELECT COUNT(*) AS c FROM manifest_photos WHERE item_id = %s", (iid,))
         r["photos"] = cur.fetchone()["c"]
         return {"item": _item(r)}
@@ -529,8 +558,14 @@ def _xml_row(i):
     enter stays blank rather than being invented."""
     return {"tracking_number": str(i["bl_number"]), "buyer_name": (i["consignee"] or "").strip(),
             "items_description": i["description"] or "", "weight": str(float(i["weight"])) if i["weight"] is not None else "0",
-            "items": str(i["pieces"] or 1), "shipper": (i.get("shipper") or "").strip(), "shipper_address1": (i.get("shipper_address") or "").strip(),
-            "buyer_address1": (i.get("consignee_address") or "").strip(), "buyer_phone": (i.get("consignee_phone") or "").strip(),
+            "items": str(i["pieces"] or 1), "shipper": (i.get("shipper") or "").strip(),
+            "shipper_address1": " ".join(x for x in ((i.get("shipper_address") or "").strip(), (i.get("shipper_phone") or "").strip()) if x),
+            "buyer_address1": " ".join(x for x in ((i.get("consignee_address") or "").strip(), (i.get("consignee_phone") or "").strip(), (i.get("consignee_email") or "").strip()) if x),
+            "notify_name": (i.get("notify_name") or "").strip(),
+            "notify_address": " ".join(x for x in ((i.get("consignee_phone") or "").strip(), (i.get("consignee_email") or "").strip()) if x),
+            "volume_m3": f"{float(i['cubic_feet']) * 0.0283168:.3f}" if i.get("cubic_feet") else "",
+            "freight_usd": f"{float(i['freight_usd']):.2f}" if i.get("freight_usd") is not None else "",
+            "freight_terms": (i.get("freight_terms") or "").strip(),
             "shipper_country": "", "fob_verified": "0", "cif_verified": "0"}
 
 
