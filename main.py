@@ -2851,26 +2851,12 @@ async def health_db():
         result["db_error"] = str(e)
     return result
 
-@app.get("/crew")
-async def crew_page():
-    from fastapi.responses import FileResponse
-    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "crew.html"))
-
-
-@app.get("/agent")
-async def agent_page():
-    from fastapi.responses import FileResponse
-    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "agent.html"))
-
-
 @app.get("/portal")
 async def portal():
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "portal.html"))
 
 
-import livemanifest as livemanifest_module
-app.include_router(livemanifest_module.router)
 app.include_router(portal_module.router)
 app.include_router(portal_module.history_router)
 
@@ -2879,7 +2865,7 @@ async def no_stale_pages(request, call_next):
     """Make browsers re-check the app pages on every load, so a new deploy shows up without Ctrl+F5."""
     response = await call_next(request)
     path = request.url.path
-    if request.method == "GET" and (path == "/" or path.endswith(".html") or path.startswith(("/portal", "/crew", "/agent", "/live.css"))) \
+    if request.method == "GET" and (path == "/" or path.endswith(".html") or path.startswith(("/portal",))) \
             and "application/json" not in response.headers.get("content-type", ""):
         response.headers["Cache-Control"] = "no-cache"
     return response
