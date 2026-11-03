@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Crew - Live Manifest | Safe Cargo Services</title>
+<link rel="stylesheet" href="/live.css">
+<style>.sug{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:2px solid var(--maroon);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}.sug div{padding:13px 14px;border-bottom:1px solid var(--line);font-size:17px}.sug div small{display:block;color:var(--muted);font-size:13px}.sug div:active{background:#fff3c4}.th{position:relative}.th img{width:74px;height:74px;object-fit:cover;border-radius:10px;border:2px solid var(--line)}.th button{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:16px}</style>
+</head><body>
+<header><div><h1>SAFE CARGO · CREW</h1><small id="sub">Live manifest</small></div><button class="btn light" id="out" style="min-height:42px;font-size:15px" hidden>Log out</button></header>
+<div class="wrap">
+
+<div id="v-login" class="card">
+  <h2 style="margin-top:0">Crew log in</h2>
+  <label for="u">Username</label><input id="u" autocapitalize="none" autocomplete="username" value="crew">
+  <div style="height:12px"></div>
+  <label for="p">Password</label><input id="p" type="password" autocomplete="current-password">
+  <div style="height:14px"></div>
+  <button class="btn block" id="login">Log in</button>
+  <div id="lmsg" class="msg err hidden"></div>
+</div>
+
+<div id="v-voyage" class="hidden">
+  <div class="card">
+    <h2 style="margin-top:0">Which voyage?</h2>
+    <p style="color:var(--muted);margin-top:0">Type the manifest number. If another crew member already started it, you join the same list.</p>
+    <div class="grid two">
+      <div><label for="mnum">Manifest number</label><input id="mnum" placeholder="e.g. 2026 774"></div>
+      <div><label for="vessel">Vessel (optional)</label><input id="vessel" placeholder="Vessel name"></div>
+    </div>
+    <div style="height:14px"></div>
+    <button class="btn block" id="start">Start / join</button>
+    <div id="vmsg" class="msg err hidden"></div>
+  </div>
+  <div class="card"><h3 style="margin-top:0">Open voyages</h3><div id="vlist"></div></div>
+</div>
+
+<div id="v-add" class="hidden">
+  <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <div><b id="mtitle"></b><div style="color:var(--muted);font-size:14px"><span class="live-dot" id="dot"></span><span id="conn">Connected</span> · <span id="mcount">0</span> aboard</div></div>
+    <button class="btn light" id="change" style="min-height:44px;font-size:15px">Change voyage</button>
+  </div>
+  <div id="closed" class="msg err hidden">This manifest has been closed by the agent's office.</div>
+  <div class="card" id="form">
+    <div class="grid two">
+      <div style="grid-column:1/-1;position:relative"><label for="cons">Consignee name</label><input id="cons" autocomplete="off" autocapitalize="words" placeholder="Start typing, saved names appear">
+        <div id="sug-consignee" class="sug hidden"></div></div>
+      <div><label for="caddr">Consignee address</label><input id="caddr" autocomplete="off" placeholder="Where it is going"></div>
+      <div><label for="cph">Consignee phone</label><input id="cph" type="tel" inputmode="tel" autocomplete="off" placeholder="Phone"></div>
+      <div style="grid-column:1/-1;position:relative"><label for="shp">Shipper name</label><input id="shp" autocomplete="off" autocapitalize="words" placeholder="Start typing, saved names appear">
+        <div id="sug-shipper" class="sug hidden"></div></div>
+      <div style="grid-column:1/-1"><label for="saddr">Shipper address</label><input id="saddr" autocomplete="off" placeholder="Shipper address"></div>
+      <div><label for="desc">Description</label><input id="desc" autocomplete="off" placeholder="e.g. clothes"></div>
+      <div><label for="pcs">Pieces</label><input id="pcs" type="number" inputmode="numeric" min="1" value="1"></div>
+      <div><label for="wt">Weight (kg)</label><input id="wt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
+      <div style="grid-column:1/-1"><label>Photos of the cargo as it arrived <span style="font-weight:400;color:var(--muted)">(up to 8)</span></label>
+        <input id="cam" type="file" accept="image/*" capture="environment" class="hidden">
+        <input id="gal" type="file" accept="image/*" multiple class="hidden">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn gold" id="takepic" style="flex:1;min-height:56px">📷 Take photo</button>
+          <button type="button" class="btn light" id="pickpic" style="flex:1;min-height:56px">🖼 Choose from gallery</button>
+        </div>
+        <div id="thumbs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div></div>
+      <div style="grid-column:1/-1"><label for="who">Your name (so the office knows who added it)</label><input id="who" autocomplete="off" placeholder="Crew member name"></div>
+    </div>
+    <div style="height:14px"></div>
+    <button class="btn block" id="add" style="min-height:64px;font-size:20px">Add to manifest (next BL number is given automatically)</button>
+    <div id="amsg" class="msg hidden"></div>
+  </div>
+  <div class="card recent"><h3 style="margin-top:0">Added from this device</h3><div id="recent"><div style="color:var(--muted)">Nothing yet.</div></div></div>
+</div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const S = { token: localStorage.getItem('live_token'), role: localStorage.getItem('live_role'), m: null, queue: JSON.parse(localStorage.getItem('live_queue') || '[]'), recent: [] };
+const save = () => { try { localStorage.setItem('live_queue', JSON.stringify(S.queue)); return true; }
+  catch (e) { return false; } };   // storage full: caller must warn, never lose an entry silently
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function say(el, text, kind) { el.textContent = text; el.className = 'msg ' + (kind || 'err'); }
+function show(v) { ['v-login','v-voyage','v-add'].forEach(x => $(x).classList.toggle('hidden', x !== v)); $('out').hidden = v === 'v-login'; }
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({ Authorization: 'Bearer ' + S.token }, opts.headers || {});
+  const res = await fetch('/live' + path, opts);
+  if (res.status === 401) { logout(); throw new Error('Please log in again.'); }
+  return res;
+}
+function logout() { localStorage.removeItem('live_token'); localStorage.removeItem('live_role'); S.token = null; show('v-login'); }
+$('out').onclick = logout;
+
+$('login').onclick = async () => {
+  const fd = new FormData(); fd.append('username', $('u').value); fd.append('password', $('p').value);
+  try {
+    const res = await fetch('/live/login', { method: 'POST', body: fd });
+    const j = await res.json();
+    if (!res.ok || j.role !== 'crew') return say($('lmsg'), 'Invalid username or password');
+    S.token = j.token; S.role = j.role; localStorage.setItem('live_token', j.token); localStorage.setItem('live_role', j.role);
+    $('p').value = ''; $('lmsg').classList.add('hidden'); loadVoyages();
+  } catch (e) { say($('lmsg'), 'No connection. Try again.'); }
+};
+$('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('login').click(); });
+
+async function loadVoyages() {
+  show('v-voyage');
+  try {
+    const list = await (await api('/manifests')).json();
+    const open = list.filter(m => m.status === 'open');
+    $('vlist').innerHTML = open.length ? open.map(m => `<div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">
+        <div><b>${esc(m.manifest_number)}</b> <span class="pill open">open</span><div style="color:var(--muted);font-size:14px">${esc(m.vessel || '')} · ${m.count} aboard</div></div>
+        <button class="btn" style="min-height:46px;font-size:16px" data-join="${esc(m.manifest_number)}" data-v="${esc(m.vessel || '')}">Join</button></div>`).join('') : '<div style="color:var(--muted)">No open voyages yet. Start one above.</div>';
+  } catch (e) { $('vlist').textContent = e.message; }
+}
+$('vlist').onclick = e => { const b = e.target.closest('[data-join]'); if (b) enter(b.dataset.join, b.dataset.v); };
+$('start').onclick = () => enter($('mnum').value.trim(), $('vessel').value.trim());
+async function enter(num, vessel) {
+  if (!num) return say($('vmsg'), 'Enter the manifest number.');
+  try {
+    const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manifest_number: num, vessel }) });
+    const j = await res.json(); if (!res.ok) return say($('vmsg'), j.detail || 'Could not start.');
+    S.m = j.manifest; S.recent = []; $('mtitle').textContent = 'Manifest ' + S.m.manifest_number + (S.m.vessel ? ' · ' + S.m.vessel : '');
+    $('mcount').textContent = S.m.count; $('closed').classList.toggle('hidden', S.m.status === 'open'); $('form').classList.toggle('hidden', S.m.status !== 'open');
+    $('who').value = localStorage.getItem('live_who') || ''; renderRecent(); show('v-add'); setTimeout(() => $('cons').focus(), 150); flush(); poll();
+  } catch (e) { say($('vmsg'), 'No connection. Try again.'); }
+}
+$('change').onclick = loadVoyages;
+
+function renderRecent() {
+  const q = S.queue.filter(x => x.mid === S.m.id).map(x => ({ consignee: x.body.consignee, description: x.body.description, pending: true }));
+  const all = q.concat(S.recent.slice().reverse());
+  $('recent').innerHTML = all.length ? all.slice(0, 40).map(i => `<div class="row"><div><b>${i.pending ? 'BL pending' : 'BL ' + i.bl_number}</b> · ${esc(i.consignee || '')}<div style="color:var(--muted);font-size:14px">${esc(i.description || '')}</div></div><div>${i.pending ? '<span class="pill" style="background:#fff3cd">waiting to send</span>' : '<span style="color:var(--green);font-weight:700">✓ added</span>'}</div></div>`).join('') : '<div style="color:var(--muted)">Nothing yet.</div>';
+}
+S.pics = [];   // {full, thumb} data URLs for the entry being typed
+function clearForm() { ['cons','caddr','cph','shp','saddr','desc','wt'].forEach(i => $(i).value = ''); $('pcs').value = 1; S.pics = []; drawThumbs(); $('cons').focus(); }
+function drawThumbs() { $('thumbs').innerHTML = S.pics.map((p, n) => `<div class="th"><img src="${p.thumb}"><button type="button" data-rm="${n}" aria-label="Remove photo">×</button></div>`).join(''); }
+$('thumbs').onclick = e => { const b = e.target.closest('[data-rm]'); if (b) { S.pics.splice(+b.dataset.rm, 1); drawThumbs(); } };
+// resize on the device first: a 5 MB camera photo becomes ~150 KB, so it sends fast on a weak signal
+function shrink(file, max, q) { return new Promise((res, rej) => { const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', q)); };
+  img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); }; img.src = url; }); }
+async function takeFiles(files) {
+  for (const f of files) { if (S.pics.length >= 8) { say($('amsg'), 'Up to 8 photos per entry.', 'warn'); break; }
+    try { S.pics.push({ full: await shrink(f, 1280, 0.72), thumb: await shrink(f, 160, 0.6) }); } catch (e) { say($('amsg'), 'That photo could not be read.', 'err'); } }
+  drawThumbs(); }
+$('takepic').onclick = () => $('cam').click(); $('pickpic').onclick = () => $('gal').click();
+$('cam').onchange = async e => { await takeFiles([...e.target.files]); e.target.value = ''; };
+$('gal').onchange = async e => { await takeFiles([...e.target.files]); e.target.value = ''; };
+// saved shippers / consignees: type a name seen before and the address fills in
+function suggest(kind, input, fill) { let t; const box = $('sug-' + kind);
+  input.addEventListener('input', () => { clearTimeout(t); const q = input.value.trim(); if (q.length < 2) return box.classList.add('hidden');
+    t = setTimeout(async () => { try { const r = await (await api(`/parties?kind=${kind}&q=${encodeURIComponent(q)}`)).json();
+      box.innerHTML = r.map(p => `<div data-n="${esc(p.name)}" data-a="${esc(p.address || '')}" data-p="${esc(p.phone || '')}">${esc(p.name)}<small>${esc(p.address || '')}${p.phone ? ' · ' + esc(p.phone) : ''}</small></div>`).join('');
+      box.classList.toggle('hidden', !r.length); } catch (e) { box.classList.add('hidden'); } }, 220); });
+  box.addEventListener('click', e => { const d = e.target.closest('[data-n]'); if (!d) return; input.value = d.dataset.n; fill(d.dataset); box.classList.add('hidden'); });
+  input.addEventListener('blur', () => setTimeout(() => box.classList.add('hidden'), 200)); }
+suggest('consignee', $('cons'), d => { $('caddr').value = d.a; $('cph').value = d.p; });
+suggest('shipper', $('shp'), d => { $('saddr').value = d.a; });
+
+$('add').onclick = async () => {
+  if (!$('cons').value.trim()) { say($('amsg'), 'Enter the consignee name.'); return $('cons').focus(); }
+  const who = $('who').value.trim(); localStorage.setItem('live_who', who);
+  const cid = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
+  const body = { client_id: cid, consignee: $('cons').value, consignee_address: $('caddr').value, consignee_phone: $('cph').value, shipper: $('shp').value, shipper_address: $('saddr').value, photos: S.pics.map(p => p.full), thumbs: S.pics.map(p => p.thumb), description: $('desc').value, pieces: parseInt($('pcs').value) || 1, weight: $('wt').value === '' ? null : parseFloat($('wt').value), added_by: who };
+  $('add').disabled = true;
+  try { await send({ mid: S.m.id, body }, true); }
+  finally { $('add').disabled = false; }
+};
+async function send(entry, fromForm) {
+  try {
+    const res = await api(`/manifests/${entry.mid}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry.body) });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) { S.recent.push(j.item); if (fromForm) { say($('amsg'), '✓ Added. BL number ' + j.item.bl_number, 'ok'); clearForm(); } navigator.vibrate && navigator.vibrate(60); poll(); renderRecent(); return true; }
+    if (res.status === 409 || res.status === 400) { if (fromForm) { say($('amsg'), j.detail || 'Not added.', 'err'); } return true; /* do not retry */ }
+    throw new Error('server');
+  } catch (e) {
+    if (e.message === 'Please log in again.') return false;
+    if (fromForm) { S.queue.push(entry);
+      if (!save()) { S.queue.pop(); say($('amsg'), 'No signal and this device is out of space, so this entry was NOT saved. Wait for signal, then add it again.', 'err'); setConn(false); return false; }
+      say($('amsg'), 'No signal. Saved on this device, it will send automatically.', 'warn'); clearForm(); renderRecent(); setConn(false); }
+    return false;
+  }
+}
+async function flush() {
+  if (!S.queue.length) return;
+  const rest = [];
+  for (const e of S.queue) { const ok = await send(e, false); if (!ok) rest.push(e); }
+  S.queue = rest; save(); if (S.m) renderRecent();
+}
+function setConn(on) { $('dot').classList.toggle('off', !on); $('conn').textContent = on ? 'Connected' : 'Offline, saving on this device'; }
+async function poll() {
+  if (!S.m || $('v-add').classList.contains('hidden')) return;
+  try { const j = await (await api(`/manifests/${S.m.id}/items?since=9999999999`)).json(); $('mcount').textContent = j.total.count;
+    $('closed').classList.toggle('hidden', j.status === 'open'); $('form').classList.toggle('hidden', j.status !== 'open'); setConn(true); if (S.queue.length) flush(); }
+  catch (e) { setConn(false); }
+}
+setInterval(poll, 6000);
+window.addEventListener('online', () => { flush(); poll(); });
+$('cons').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('desc').focus(); } });
+if (S.token && S.role === 'crew') loadVoyages(); else show('v-login');
+</script></body></html>

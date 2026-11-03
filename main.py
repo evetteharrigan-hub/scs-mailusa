@@ -449,6 +449,12 @@ def safe_str(val) -> str:
     return str(val).strip()
 
 
+def xml_text(val) -> str:
+    """Escape &, < and > so free text (names, descriptions) cannot break the XML."""
+    from xml.sax.saxutils import escape
+    return escape(safe_str(val))
+
+
 def create_null_element(parent, tag):
     """Create an element with <null/> child."""
     elem = etree.SubElement(parent, tag)
@@ -502,6 +508,11 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
     # Use Items column as package count — it represents the number of packages in the shipment
     items_col = safe_str(row_data.get("items", "")).strip()
     items_count = 1  # Each tracking number = 1 package on the waybill
+    if shipment_info.get("use_pieces"):  # live manifest: the crew count the pieces for each BL
+        try:
+            items_count = max(1, int(float(items_col or 1)))
+        except ValueError:
+            items_count = 1
     goods_desc_joined = ", ".join(items_desc) if items_desc else safe_str(row_data.get("items_description", ""))
     hs_codes = parse_bracketed_array(safe_str(row_data.get("items_hs_codes", "")))
     first_hs = hs_codes[0] if hs_codes else ""
@@ -509,7 +520,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
     shipper_addr = ", ".join(filter(None, [
         safe_str(row_data.get("shipper_address1", "")),
         safe_str(row_data.get("shipper_city", "")),
-        f"{safe_str(row_data.get('shipper_state',''))} {safe_str(row_data.get('shipper_zip',''))}".strip(),
+        f"{xml_text(row_data.get('shipper_state',''))} {xml_text(row_data.get('shipper_zip',''))}".strip(),
         safe_str(row_data.get("shipper_country", ""))
     ]))
     buyer_addr = "\n".join(filter(None, [
@@ -525,7 +536,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Identification_segment>',
         f'<Voyage_number>{voyage}</Voyage_number>',
         f'<Date_of_departure>{formatted_date}</Date_of_departure>',
-        f'<Bol_reference>{safe_str(row_data.get("tracking_number", "")).upper()}</Bol_reference>',
+        f'<Bol_reference>{xml_text(row_data.get("tracking_number", "")).upper()}</Bol_reference>',
         '<Customs_office_segment>',
         '<Code>00RB</Code>',
         '<Name>ROAD BAY</Name>',
@@ -543,7 +554,7 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Fas/>',
         '<Total_number_of_containers>0</Total_number_of_containers>',
         '<Total_number_of_vehicles>0</Total_number_of_vehicles>',
-        f'<Total_gross_mass_manifested>{safe_str(row_data.get("weight","0"))}</Total_gross_mass_manifested>',
+        f'<Total_gross_mass_manifested>{xml_text(row_data.get("weight","0"))}</Total_gross_mass_manifested>',
         '<Volume_in_cubic_meters>0.02</Volume_in_cubic_meters>',
         '<Number_of_sub_bols/>',
         '<Bol_type_segment>',
@@ -554,15 +565,15 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         '<Code>',
         '<null/>',
         '</Code>',
-        f'<Name>{safe_str(row_data.get("shipper",""))}</Name>',
-        f'<Address>{shipper_addr}</Address>',
+        f'<Name>{xml_text(row_data.get("shipper",""))}</Name>',
+        f'<Address>{xml_text(shipper_addr)}</Address>',
         '</Exporter_segment>',
         '<Consignee_segment>',
         '<Code>',
         '<null/>',
         '</Code>',
-        f'<Name>{safe_str(row_data.get("buyer_name",""))}</Name>',
-        f'<Address>{buyer_addr}</Address>',
+        f'<Name>{xml_text(row_data.get("buyer_name",""))}</Name>',
+        f'<Address>{xml_text(buyer_addr)}</Address>',
         '</Consignee_segment>',
         '<Notify_segment>',
         '<Code>',
@@ -585,10 +596,10 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
         f'<Number_of_packages>{items_count}</Number_of_packages>',
         '</Packages_segment>',
         '<Shipping_segment>',
-        f'<Shipping_marks>{safe_str(row_data.get("tracking_number",""))}</Shipping_marks>',
+        f'<Shipping_marks>{xml_text(row_data.get("tracking_number",""))}</Shipping_marks>',
         '</Shipping_segment>',
         '<Goods_segment>',
-        f'<Goods_description>{goods_desc_joined}</Goods_description>',
+        f'<Goods_description>{xml_text(goods_desc_joined)}</Goods_description>',
         '<Place_of_origin>',
         '<null/>',
         '</Place_of_origin>',
@@ -711,7 +722,9 @@ def generate_waybill_xml(row_data: dict, shipment_info: dict, row_index: int) ->
     import re as _re
     def _upper_text(m):
         tag_open, text, tag_close = m.group(1), m.group(2), m.group(3)
-        return tag_open + text.upper() + tag_close
+        # uppercase the words but leave XML entities (&amp; &lt; &gt;) exactly as written
+        parts = _re.split(r'(&(?:amp|lt|gt);)', text)
+        return tag_open + ''.join(p if p.startswith('&') and p.endswith(';') else p.upper() for p in parts) + tag_close
     xml_str = _re.sub(r'(>)([^<>]+)(<)', _upper_text, xml_str)
     return xml_str.encode('utf-8')
 
@@ -869,7 +882,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     shipper_city_val = safe_str(row_data.get('shipper_city', '')).strip().upper()
     shipper_state_val = safe_str(row_data.get('shipper_state', '')).strip().upper()
     exp_lines = [l for l in [shipper, shipper_addr1_val, (shipper_city_val + ' ' + shipper_state_val).strip(), shipper_country] if l]
-    x.append('<Exporter_name>' + '\n'.join(exp_lines) + '</Exporter_name>')
+    x.append('<Exporter_name>' + xml_text('\n'.join(exp_lines)) + '</Exporter_name>')
     x.append('</Exporter>')
     x.append('<Consignee>')
     x.append('<Consignee_code>999</Consignee_code>')
@@ -877,7 +890,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     x.append('</Consignee>')
     x.append('<Financial>')
     x.append('<Financial_code><null/></Financial_code>')
-    x.append(f'<Financial_name>{buyer_name}</Financial_name>')
+    x.append(f'<Financial_name>{xml_text(buyer_name)}</Financial_name>')
     x.append('</Financial>')
     x.append('</Traders>')
     
@@ -887,7 +900,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     x.append('<Declarant_representative>Evette Harrigan</Declarant_representative>')
     x.append('<Reference>')
     x.append(f'<Year>{current_year}</Year>')
-    x.append(f'<Number>{row_index}/{buyer_name}/{tracking}</Number>')
+    x.append(f'<Number>{row_index}/{xml_text(buyer_name)}/{xml_text(tracking)}</Number>')
     x.append('</Reference>')
     x.append('</Declarant>')
     
@@ -908,7 +921,7 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     # Country name lookup for origin
     country_names = {"US": "United States", "CN": "China", "GB": "United Kingdom", "CA": "Canada", "JP": "Japan", "DE": "Germany", "FR": "France", "IN": "India", "KR": "Korea, Republic of", "TW": "Taiwan", "MX": "Mexico", "BR": "Brazil", "IT": "Italy"}
     origin_country_name = country_names.get(shipper_country, shipper_country)
-    x.append(f'<Country_of_origin_name>{origin_country_name}</Country_of_origin_name>')
+    x.append(f'<Country_of_origin_name>{xml_text(origin_country_name)}</Country_of_origin_name>')
     x.append('</Country>')
     x.append(f'<Value_details>{cif_usd}</Value_details>')
     x.append('<CAP/>')
@@ -919,11 +932,11 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
     x.append('<Transport>')
     x.append('<Means_of_transport>')
     x.append('<Departure_arrival_information>')
-    x.append(f'<Identity>{carrier_name}</Identity>')
+    x.append(f'<Identity>{xml_text(carrier_name)}</Identity>')
     x.append('<Nationality>KN</Nationality>')
     x.append('</Departure_arrival_information>')
     x.append('<Border_information>')
-    x.append(f'<Identity>{carrier_name}</Identity>')
+    x.append(f'<Identity>{xml_text(carrier_name)}</Identity>')
     x.append('<Nationality>KN</Nationality>')
     x.append('<Mode>1</Mode>')
     x.append('</Border_information>')
@@ -1033,13 +1046,13 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
             x.append('<Attached_documents>')
             x.append('<Attached_document_code>INV</Attached_document_code>')
             x.append('<Attached_document_name>Invoice</Attached_document_name>')
-            x.append(f'<Attached_document_reference>{tracking}</Attached_document_reference>')
+            x.append(f'<Attached_document_reference>{xml_text(tracking)}</Attached_document_reference>')
             x.append(f'<Attached_document_date>{formatted_date}</Attached_document_date>')
             x.append('</Attached_documents>')
             x.append('<Attached_documents>')
             x.append('<Attached_document_code>BOL</Attached_document_code>')
             x.append('<Attached_document_name>Bill of Lading or Air Waybill</Attached_document_name>')
-            x.append(f'<Attached_document_reference>{tracking}</Attached_document_reference>')
+            x.append(f'<Attached_document_reference>{xml_text(tracking)}</Attached_document_reference>')
             x.append(f'<Attached_document_date>{formatted_date}</Attached_document_date>')
             x.append('</Attached_documents>')
         
@@ -1096,11 +1109,11 @@ def generate_declaration_xml(row_data: dict, shipment_info: dict, row_index: int
         x.append(f'<Country_of_origin_code>{origin_country_code}</Country_of_origin_code>')
         x.append('<Country_of_origin_region><null/></Country_of_origin_region>')
         x.append('<Description_of_goods>- - Other</Description_of_goods>')
-        x.append(f'<Commercial_Description>{item_desc}</Commercial_Description>')
+        x.append(f'<Commercial_Description>{xml_text(item_desc)}</Commercial_Description>')
         x.append('</Goods_description>')
         
         x.append('<Previous_doc>')
-        x.append(f'<Summary_declaration>{tracking}</Summary_declaration>')
+        x.append(f'<Summary_declaration>{xml_text(tracking)}</Summary_declaration>')
         x.append('<Summary_declaration_sl><null/></Summary_declaration_sl>')
         x.append('<Previous_document_reference><null/></Previous_document_reference>')
         x.append('<Previous_warehouse_code><null/></Previous_warehouse_code>')
@@ -2838,12 +2851,26 @@ async def health_db():
         result["db_error"] = str(e)
     return result
 
+@app.get("/crew")
+async def crew_page():
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "crew.html"))
+
+
+@app.get("/agent")
+async def agent_page():
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "agent.html"))
+
+
 @app.get("/portal")
 async def portal():
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "portal.html"))
 
 
+import livemanifest as livemanifest_module
+app.include_router(livemanifest_module.router)
 app.include_router(portal_module.router)
 app.include_router(portal_module.history_router)
 
@@ -2852,7 +2879,7 @@ async def no_stale_pages(request, call_next):
     """Make browsers re-check the app pages on every load, so a new deploy shows up without Ctrl+F5."""
     response = await call_next(request)
     path = request.url.path
-    if request.method == "GET" and (path == "/" or path.endswith(".html") or path.startswith("/portal")) \
+    if request.method == "GET" and (path == "/" or path.endswith(".html") or path.startswith(("/portal", "/crew", "/agent", "/live.css"))) \
             and "application/json" not in response.headers.get("content-type", ""):
         response.headers["Cache-Control"] = "no-cache"
     return response
