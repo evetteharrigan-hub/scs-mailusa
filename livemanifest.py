@@ -46,6 +46,12 @@ def _init():
         for col in ("voyage_number", "master_awb", "date_of_departure"):
             cur.execute(f"ALTER TABLE manifests ADD COLUMN IF NOT EXISTS {col} TEXT")
         cur.execute("ALTER TABLE manifests ADD COLUMN IF NOT EXISTS ballast BOOLEAN NOT NULL DEFAULT FALSE")
+        for col in ("port_from_code", "port_from_name", "port_to_code", "port_to_name"):
+            cur.execute(f"ALTER TABLE manifests ADD COLUMN IF NOT EXISTS {col} TEXT")
+        cur.execute("""CREATE TABLE IF NOT EXISTS live_ports (
+            code TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())""")
+        cur.execute("""INSERT INTO live_ports (code, name) VALUES ('MFSXM','GALIS BAY'), ('AIAXA','ROAD BAY')
+                       ON CONFLICT (code) DO NOTHING""")
         cur.execute("""CREATE TABLE IF NOT EXISTS manifest_items (
             id SERIAL PRIMARY KEY,
             manifest_id INTEGER NOT NULL REFERENCES manifests(id) ON DELETE CASCADE,
@@ -121,7 +127,40 @@ def _m(r):
             "arrival_date": r["arrival_date"].isoformat() if r["arrival_date"] else None,
             "status": r["status"], "count": r.get("count", 0), "weight": float(r.get("weight") or 0),
             "voyage_number": r.get("voyage_number") or "", "master_awb": r.get("master_awb") or "",
-            "date_of_departure": r.get("date_of_departure") or "", "ballast": bool(r.get("ballast"))}
+            "date_of_departure": r.get("date_of_departure") or "", "ballast": bool(r.get("ballast")),
+            "port_from_code": r.get("port_from_code") or DEFAULT_FROM[0], "port_from_name": r.get("port_from_name") or DEFAULT_FROM[1],
+            "port_to_code": r.get("port_to_code") or DEFAULT_TO[0], "port_to_name": r.get("port_to_name") or DEFAULT_TO[1]}
+
+
+DEFAULT_FROM = ("MFSXM", "GALIS BAY")
+DEFAULT_TO = ("AIAXA", "ROAD BAY")
+
+
+def _port(code, name, default):
+    """Clean one port. Blank means the automatic port (Galis Bay -> Road Bay); a half-filled port is refused."""
+    code = re.sub(r"\s+", "", code or "").upper(); name = re.sub(r"\s+", " ", name or "").strip().upper()
+    if not code and not name:
+        return default
+    if not name or not code:
+        raise HTTPException(status_code=400, detail="Enter both the port name and its port code.")
+    if not re.fullmatch(r"[A-Z0-9]{2,8}", code):
+        raise HTTPException(status_code=400, detail="Port code can only use letters and numbers (for example AIAXA).")
+    return (code, name[:60])
+
+
+def _remember_ports(cur, *ports):
+    for code, name in ports:
+        cur.execute("""INSERT INTO live_ports (code, name) VALUES (%s,%s)
+                       ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()""", (code, name))
+
+
+@router.get("/ports")
+async def list_ports(user: dict = Depends(any_live)):
+    _init()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT code, name FROM live_ports ORDER BY updated_at DESC, name")
+        return {"ports": [dict(r) for r in cur.fetchall()]}
 
 
 @router.get("/manifests")
@@ -152,6 +191,10 @@ class BallastBody(BaseModel):
     voyage_number: str
     date_of_departure: str
     vessel: str = ""
+    port_from_code: str = ""
+    port_from_name: str = ""
+    port_to_code: str = ""
+    port_to_name: str = ""
 
 
 @router.post("/ballast")
@@ -167,11 +210,14 @@ async def process_ballast(body: BallastBody, user: dict = Depends(any_live)):
     if not dep:
         raise HTTPException(status_code=400, detail="Enter the date.")
     key = f"{voy} {dep.isoformat()}"
+    pf = _port(body.port_from_code, body.port_from_name, DEFAULT_FROM); pt = _port(body.port_to_code, body.port_to_name, DEFAULT_TO)
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by, status, ballast)
-                       VALUES (%s,%s,%s,%s,%s,%s,'closed',TRUE) ON CONFLICT (manifest_number) DO NOTHING""",
-                    (key, body.vessel.strip(), dep, voy, dep.isoformat(), user["role"]))
+        _remember_ports(cur, pf, pt)
+        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by, status, ballast,
+                       port_from_code, port_from_name, port_to_code, port_to_name)
+                       VALUES (%s,%s,%s,%s,%s,%s,'closed',TRUE,%s,%s,%s,%s) ON CONFLICT (manifest_number) DO NOTHING""",
+                    (key, body.vessel.strip(), dep, voy, dep.isoformat(), user["role"], pf[0], pf[1], pt[0], pt[1]))
         cur.execute("SELECT * FROM manifests WHERE manifest_number = %s FOR UPDATE", (key,))
         m = cur.fetchone()
         cur.execute("SELECT COUNT(*) AS c FROM manifest_items WHERE manifest_id = %s", (m["id"],))
@@ -188,6 +234,10 @@ class NewManifest(BaseModel):
     vessel: str = ""
     arrival_date: str = ""
     date_of_departure: str = ""
+    port_from_code: str = ""
+    port_from_name: str = ""
+    port_to_code: str = ""
+    port_to_name: str = ""
 
 
 @router.post("/manifests")
@@ -203,14 +253,18 @@ async def create_manifest(body: NewManifest, user: dict = Depends(any_live)):
         raise HTTPException(status_code=400, detail="Enter the date.")
     arrival = portal_module.parse_date(body.arrival_date) or dep
     key = f"{voy} {dep.isoformat()}"      # one voyage = voyage number + date
+    pf = _port(body.port_from_code, body.port_from_name, DEFAULT_FROM); pt = _port(body.port_to_code, body.port_to_name, DEFAULT_TO)
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        _remember_ports(cur, pf, pt)
         cur.execute("SELECT * FROM manifests WHERE manifest_number = %s", (key,))
         r = cur.fetchone()
         if r:  # joining an existing voyage is how a second crew member gets on the same list
             return {"manifest": _m(r), "existing": True}
-        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by)
-                       VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""", (key, body.vessel.strip(), arrival, voy, dep.isoformat(), user["role"]))
+        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by,
+                       port_from_code, port_from_name, port_to_code, port_to_name)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                    (key, body.vessel.strip(), arrival, voy, dep.isoformat(), user["role"], pf[0], pf[1], pt[0], pt[1]))
         return {"manifest": _m(cur.fetchone()), "existing": False}
 
 
@@ -460,18 +514,25 @@ class EditManifest(BaseModel):
     voyage_number: str = ""
     master_awb: str = ""
     date_of_departure: str = ""
+    port_from_code: str = ""
+    port_from_name: str = ""
+    port_to_code: str = ""
+    port_to_name: str = ""
 
 
 @router.put("/manifests/{mid}")
 async def edit_manifest(mid: int, body: EditManifest, user: dict = Depends(agent_only)):
     _init()
     arrival = portal_module.parse_date(body.arrival_date)
+    pf = _port(body.port_from_code, body.port_from_name, DEFAULT_FROM); pt = _port(body.port_to_code, body.port_to_name, DEFAULT_TO)
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        _remember_ports(cur, pf, pt)
         # the voyage number is NOT editable here: BL numbers are issued from it, so changing it would rename them all
         cur.execute("""UPDATE manifests SET vessel=%s, arrival_date=COALESCE(%s, arrival_date),
-                       master_awb=%s, date_of_departure=%s WHERE id=%s RETURNING *""",
-                    (body.vessel.strip(), arrival, body.master_awb.strip(), body.date_of_departure.strip(), mid))
+                       master_awb=%s, date_of_departure=%s,
+                       port_from_code=%s, port_from_name=%s, port_to_code=%s, port_to_name=%s WHERE id=%s RETURNING *""",
+                    (body.vessel.strip(), arrival, body.master_awb.strip(), body.date_of_departure.strip(), pf[0], pf[1], pt[0], pt[1], mid))
         r = cur.fetchone()
         if not r:
             raise HTTPException(status_code=404, detail="Manifest not found.")
@@ -589,6 +650,9 @@ def _build_pdf(m, items) -> bytes:
           Paragraph("CARGO MANIFEST", ti)]
     left = [Paragraph(f"<b>Voyage No.:</b> {esc(m['voyage_number'] or m['manifest_number'])}", inf), Paragraph(f"<b>Vessel:</b> {esc(m['vessel'] or '-')}", inf),
             Paragraph(f"<b>Date of Arrival:</b> {arrival}", inf)]
+    mp = _m(m)
+    left += [Paragraph(f"<b>Port of Departure:</b> {esc(mp['port_from_name'])} ({esc(mp['port_from_code'])})", inf),
+             Paragraph(f"<b>Port of Arrival:</b> {esc(mp['port_to_name'])} ({esc(mp['port_to_code'])})", inf)]
     right = [Paragraph(f"<b>Total Shipments:</b> {len(items)}", inf), Paragraph(f"<b>Total Pieces:</b> {total_pcs}", inf),
              Paragraph(f"<b>Total Weight:</b> {total_wt:,.2f} kg", inf)]
     it = Table([[left, right]], colWidths=[130*mm, 117*mm])
@@ -641,11 +705,13 @@ def _xml_row(i, voyage: str = ""):
 
 def _xml_for(m, i) -> bytes:
     import main as main_module
+    mm = _m(m)
     if not m["master_awb"]:
         raise HTTPException(status_code=400, detail="Add the Master AWB to this voyage first (Edit voyage).")
     info = {"master_awb": m["master_awb"], "voyage_number": m["voyage_number"] or "",
             "date_of_departure": m["date_of_departure"] or "", "manifest_reference": m["manifest_number"],
-            "port_of_loading_code": "MFSXM", "port_of_loading_name": "GALISBAY, ST MARTIN", "use_pieces": True}
+            "port_of_loading_code": mm["port_from_code"], "port_of_loading_name": mm["port_from_name"],
+            "port_of_unloading_code": mm["port_to_code"], "port_of_unloading_name": mm["port_to_name"], "use_pieces": True}
     return main_module.generate_waybill_xml(_xml_row(i, m["voyage_number"] or ""), info, i["bl_number"])
 
 

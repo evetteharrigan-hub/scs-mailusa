@@ -27,6 +27,12 @@
       <div><label for="mnum">Voyage number</label><input id="mnum" autocapitalize="characters" autocomplete="off" placeholder="e.g. AA1234"></div>
       <div><label for="vdate">Date</label><input id="vdate" type="date"></div>
       <div style="grid-column:1/-1"><label for="vessel">Vessel (optional)</label><input id="vessel" placeholder="Vessel name"></div>
+      <div style="grid-column:1/-1;color:var(--muted);font-size:14px;margin-top:4px">Ports (remembered for next time):</div>
+      <div><label for="cpf">Port of departure</label><input id="cpf" list="portlist" autocomplete="off" placeholder="Name"></div>
+      <div><label for="cpfc">Departure code</label><input id="cpfc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
+      <div><label for="cpt">Port of arrival</label><input id="cpt" list="portlist" autocomplete="off" placeholder="Name"></div>
+      <div><label for="cptc">Arrival code</label><input id="cptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
+      <datalist id="portlist"></datalist>
     </div>
     <div style="height:14px"></div>
     <button class="btn block" id="start">Start / join</button>
@@ -128,12 +134,24 @@ async function loadVoyages() {
   } catch (e) { $('vlist').textContent = e.message; }
 }
 $('vlist').onclick = e => { const b = e.target.closest('[data-join]'); if (b) enter(b.dataset.join, b.dataset.v, b.dataset.d); };
+
+let PORTS = [];
+async function loadPorts(p, fromV) {
+  try { PORTS = (await (await api('/ports')).json()).ports || []; } catch (e) {}
+  $('portlist').innerHTML = PORTS.map(x => `<option value="${esc(x.name)}">${esc(x.code)}</option>`).join('');
+  setPort(p + 'pf', p + 'pfc', fromV ? fromV.port_from_name : 'GALIS BAY', fromV ? fromV.port_from_code : 'MFSXM');
+  setPort(p + 'pt', p + 'ptc', fromV ? fromV.port_to_name : 'ROAD BAY', fromV ? fromV.port_to_code : 'AIAXA');
+}
+function setPort(n, c, name, code) { $(n).value = name || ''; $(c).value = code || ''; }
+function wirePorts(p) { [[p + 'pf', p + 'pfc'], [p + 'pt', p + 'ptc']].forEach(([n, c]) => { $(n).addEventListener('input', () => { const f = PORTS.find(x => x.name === $(n).value.trim().toUpperCase()); if (f) $(c).value = f.code; }); }); }
+const portBody = p => ({ port_from_name: $(p + 'pf').value, port_from_code: $(p + 'pfc').value, port_to_name: $(p + 'pt').value, port_to_code: $(p + 'ptc').value });
+wirePorts('c');
 $('start').onclick = () => enter($('mnum').value.trim(), $('vessel').value.trim(), $('vdate').value);
 async function enter(num, vessel, vdate) {
   if (!num) return say($('vmsg'), 'Enter the voyage number.');
   if (!vdate) return say($('vmsg'), 'Choose the date.');
   try {
-    const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voyage_number: num, date_of_departure: vdate, vessel }) });
+    const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ voyage_number: num, date_of_departure: vdate, vessel }, portBody('c'))) });
     const j = await res.json(); if (!res.ok) return say($('vmsg'), j.detail || 'Could not start.');
     S.m = j.manifest; S.recent = []; $('mtitle').textContent = 'Voyage ' + S.m.voyage_number + ' · ' + S.m.date_of_departure + (S.m.vessel ? ' · ' + S.m.vessel : '');
     $('mcount').textContent = S.m.count; $('closed').textContent = S.m.ballast ? '⚓ This voyage is recorded IN BALLAST (no cargo).' : "This manifest has been closed by the agent's office."; $('closed').classList.toggle('hidden', S.m.status === 'open'); $('form').classList.toggle('hidden', S.m.status !== 'open');
@@ -143,19 +161,19 @@ async function enter(num, vessel, vdate) {
 function fmtD(iso) { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
 async function loadLast() {
   try { const l = (await (await api('/last-voyage')).json()).last;
-    $('lastv').innerHTML = l ? `Last voyage: <b>${esc(l.voyage_number || l.manifest_number)}</b> on <b>${esc(fmtD(l.date_of_departure || l.arrival_date))}</b>` + (l.ballast ? ' (in ballast, no cargo)' : ` (${l.count} BL${l.count === 1 ? '' : 's'})`) + '<div style="font-size:14px;color:var(--muted)">Enter the new voyage number below.</div>' : 'No previous voyage yet. This will be the first one.';
+    if (l) await loadPorts('c', l); else await loadPorts('c'); $('lastv').innerHTML = l ? `Last voyage: <b>${esc(l.voyage_number || l.manifest_number)}</b> on <b>${esc(fmtD(l.date_of_departure || l.arrival_date))}</b>` + (l.ballast ? ' (in ballast, no cargo)' : ` (${l.count} BL${l.count === 1 ? '' : 's'})`) + '<div style="font-size:14px;color:var(--muted)">Enter the new voyage number below.</div>' : 'No previous voyage yet. This will be the first one.';
   } catch (e) { $('lastv').textContent = 'Could not check the last voyage. You can still start one below.'; } }
 function ballastAsk() {
   const voy = $('mnum').value.trim(), d = $('vdate').value;
   if (!voy) return say($('vmsg'), 'Enter the voyage number.');
   if (!d) return say($('vmsg'), 'Choose the date.');
   $('vmsg').classList.add('hidden');
-  $('bq').textContent = `Process voyage ${voy.toUpperCase()} dated ${fmtD(d)} as IN BALLAST, with no cargo aboard?`;
+  $('bq').textContent = `Process voyage ${voy.toUpperCase()} dated ${fmtD(d)}, ${$('cpf').value || 'Galis Bay'} to ${$('cpt').value || 'Road Bay'}, as IN BALLAST with no cargo aboard?`;
   $('bconfirm').classList.remove('hidden'); }
 $('ballast').onclick = ballastAsk;
 $('bno').onclick = () => $('bconfirm').classList.add('hidden');
 $('byes').onclick = async () => {
-  const body = { voyage_number: $('mnum').value.trim(), date_of_departure: $('vdate').value, vessel: $('vessel').value.trim() };
+  const body = Object.assign({ voyage_number: $('mnum').value.trim(), date_of_departure: $('vdate').value, vessel: $('vessel').value.trim() }, portBody('c'));
   $('byes').disabled = true;
   try { const res = await api('/ballast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const j = await res.json().catch(() => ({}));
     $('bconfirm').classList.add('hidden');
