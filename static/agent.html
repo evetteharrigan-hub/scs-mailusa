@@ -45,8 +45,9 @@
   <div class="card"><b>Add an entry</b>
     <div class="grid three" style="margin-top:10px"><div><label>Consignee</label><input id="a-c"></div><div><label>Description</label><input id="a-d"></div>
       <div style="display:flex;gap:10px"><div style="flex:1"><label>Pcs</label><input id="a-p" type="number" min="1" value="1"></div><div style="flex:1"><label>Kg</label><input id="a-w" type="number" step="0.01" min="0"></div></div>
-      <div><label>Freight terms</label><select id="a-t"><option value="PREPAID">PREPAID</option><option value="COLLECT">COLLECT</option></select></div><div><label>Freight (USD)</label><input id="a-f" type="number" step="0.01" min="0"></div></div>
-    <div style="color:var(--muted);font-size:13px;margin-top:6px">Shipper, address, email and the rest can be filled in with Edit after adding.</div>
+      <div><label>Freight terms</label><select id="a-t"><option value="PREPAID">PREPAID</option><option value="COLLECT">COLLECT</option></select></div><div><label>Freight (USD)</label><input id="a-f" type="number" step="0.01" min="0"></div>
+      <div><label>Telephone <span class="edited">(optional)</span></label><input id="a-ph" type="tel"></div><div><label>Email <span class="edited">(optional)</span></label><input id="a-em" type="email" autocapitalize="none"></div></div>
+    <div style="color:var(--muted);font-size:13px;margin-top:6px">Shipper, address and the rest can be filled in with Edit after adding. Phone and email can be added or changed at any time and are saved for next time.</div>
     <div style="height:10px"></div><button class="btn" id="a-add">Add (next BL number)</button><div id="amsg" class="msg hidden"></div></div>
   <div class="tbl"><table><thead><tr><th>BL No.</th><th>Consignee / Shipper</th><th>Description</th><th>Pcs</th><th>Kg / Freight</th><th>Photos</th><th>Added by</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
 </div>
@@ -124,10 +125,10 @@ async function poll(first) {
   } catch (e) { $('dot').classList.add('off'); $('conn').textContent = 'Reconnecting…'; }
 }
 $('a-add').onclick = async () => {
-  const body = { consignee: $('a-c').value, description: $('a-d').value, pieces: parseInt($('a-p').value) || 1, weight: $('a-w').value === '' ? null : parseFloat($('a-w').value), freight_terms: $('a-t').value, freight_usd: $('a-f').value === '' ? null : parseFloat($('a-f').value), added_by: 'Agent office', client_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
+  const body = { consignee: $('a-c').value, description: $('a-d').value, pieces: parseInt($('a-p').value) || 1, weight: $('a-w').value === '' ? null : parseFloat($('a-w').value), consignee_phone: $('a-ph').value, consignee_email: $('a-em').value, freight_terms: $('a-t').value, freight_usd: $('a-f').value === '' ? null : parseFloat($('a-f').value), added_by: 'Agent office', client_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
   const res = await api(`/manifests/${S.m.id}/items`, Object.assign({ method: 'POST' }, json(body))); const j = await res.json();
   if (!res.ok) return say($('amsg'), j.detail || 'Not added.');
-  say($('amsg'), '✓ Added as BL ' + j.item.bl_number, 'ok'); ['a-c','a-d','a-w','a-f'].forEach(i => $(i).value = ''); $('a-p').value = 1; poll(); $('a-c').focus();
+  say($('amsg'), '✓ Added as BL ' + j.item.bl_number, 'ok'); ['a-c','a-d','a-w','a-f','a-ph','a-em'].forEach(i => $(i).value = ''); $('a-p').value = 1; poll(); $('a-c').focus();
 };
 $('rows').onclick = async e => {
   const pb = e.target.closest('[data-pics]');
