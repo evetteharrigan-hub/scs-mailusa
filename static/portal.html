@@ -249,6 +249,14 @@
             <button type="submit" class="btn btn-primary" id="pay-btn">Mark as Paid</button>
           </div>
         </form>
+        <div id="undo-box" class="hidden" style="margin-top:16px;padding:12px 14px;border:1px dashed var(--maroon);border-radius:8px">
+          <div style="font-weight:600;color:var(--maroon);margin-bottom:6px">Undo this payment (code needed)</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Use this when a customer is refunded. It marks the package unpaid again and takes it out of the cash reports.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="password" id="undo-code" autocomplete="off" placeholder="Undo code" style="flex:1;min-width:140px">
+            <button type="button" class="btn btn-light" id="undo-btn">Undo payment</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -586,6 +594,7 @@
       $('pay-section').classList.remove('hidden');
       $('pay-heading').textContent = r.paid ? 'Update Payment Record' : 'Record Payment';
       $('pay-btn').textContent = r.paid ? 'Update Payment' : 'Mark as Paid';
+      $('undo-box').classList.toggle('hidden', !r.paid); $('undo-code').value = '';
       $('pay-date').value = r.date_paid ? r.date_paid.slice(0, 10) : todayLocal();
       $('pay-method').value = r.payment_method || 'cash';
     }
@@ -666,6 +675,25 @@
     } finally {
       btn.disabled = false;
     }
+  });
+
+  $('undo-btn').addEventListener('click', async () => {
+    if (!current) return;
+    const code = $('undo-code').value;
+    if (!code) { show($('detail-msg'), 'Type the undo code first.'); return; }
+    if (!confirm('Undo the payment for ' + (current.buyer_name || current.tracking_number) + '?\nIt will go back to Unpaid.')) return;
+    const btn = $('undo-btn'); btn.disabled = true; hide($('detail-msg'));
+    try {
+      const res = await api('/portal/accounting/mark-unpaid', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tracking_number: current.tracking_number, code })
+      });
+      const data = await res.json();
+      current = data.shipment; renderDetail(true);
+      show($('detail-msg'), 'Payment undone. The package is Unpaid again.', 'ok');
+      acSearch();
+    } catch (err) { show($('detail-msg'), err.message); }
+    finally { btn.disabled = false; $('undo-code').value = ''; }
   });
 
   // ─── Reports ───

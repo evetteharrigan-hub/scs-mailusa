@@ -677,12 +677,39 @@ async def accounting_mark_paid(body: MarkPaidRequest, user: dict = Depends(accou
 
 class UnpaidRequest(BaseModel):
     tracking_number: str
+    code: str = ""
+
+
+_undo_fails: dict = {}      # who -> (failed attempts, locked until timestamp)
+UNDO_MAX_FAILS = 5
+UNDO_LOCK_SECONDS = 300
+
+
+def _check_undo_code(who: str, code: str) -> None:
+    """The undo code lives in the UNDO_PAYMENT_CODE setting, never in the source. Wrong guesses lock the screen for a while."""
+    import time
+    expected = os.environ.get("UNDO_PAYMENT_CODE", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Undo is switched off: no undo code has been set up.")
+    fails, until = _undo_fails.get(who, (0, 0.0))
+    now = time.time()
+    if until > now:
+        raise HTTPException(status_code=429, detail=f"Too many wrong codes. Try again in {int((until - now) // 60) + 1} minute(s).")
+    if not code or not hmac.compare_digest(code.encode(), expected.encode()):
+        fails += 1
+        _undo_fails[who] = (fails, now + UNDO_LOCK_SECONDS if fails >= UNDO_MAX_FAILS else 0.0)
+        if fails >= UNDO_MAX_FAILS:
+            _undo_fails[who] = (0, now + UNDO_LOCK_SECONDS)
+            raise HTTPException(status_code=429, detail=f"Too many wrong codes. Locked for {UNDO_LOCK_SECONDS // 60} minutes.")
+        raise HTTPException(status_code=403, detail="Wrong code. The payment was not changed.")
+    _undo_fails.pop(who, None)
 
 
 @router.post("/accounting/mark-unpaid")
 async def accounting_mark_unpaid(body: UnpaidRequest, user: dict = Depends(accounting_user)):
-    """Undo a payment recorded by mistake: clears paid, date and method."""
+    """Undo a payment recorded by mistake: clears paid, date and method. Needs the special undo code."""
     _require_db()
+    _check_undo_code(str(user.get("role") or "accounting"), body.code or "")
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(f"""UPDATE shipments SET paid = FALSE, date_paid = NULL, payment_method = NULL
