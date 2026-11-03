@@ -3,7 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Crew - Live Manifest | Safe Cargo Services</title>
 <link rel="stylesheet" href="/live.css">
-<style>.note{position:absolute;left:0;right:0;bottom:calc(100% - 6px);z-index:30;background:#fff8dc;border:2px solid var(--gold);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.35;box-shadow:0 10px 28px rgba(0,0,0,.22);animation:rise .18s ease-out}.note:after{content:"";position:absolute;left:28px;bottom:-11px;width:18px;height:18px;background:#fff8dc;border-right:2px solid var(--gold);border-bottom:2px solid var(--gold);transform:rotate(45deg)}@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.sect{grid-column:1/-1;font-weight:800;color:var(--maroon);text-transform:uppercase;letter-spacing:.6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:6px}.seg{display:flex;gap:10px}.seg input{position:absolute;opacity:0;pointer-events:none}.seg label{flex:1;margin:0;text-align:center;padding:15px;border:2px solid #cfc7b6;border-radius:10px;font-weight:800;font-size:18px;background:#fff;cursor:pointer;touch-action:manipulation}.seg input:checked+label{background:var(--maroon);color:#fff;border-color:var(--maroon)}.sug{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:2px solid var(--maroon);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}.sug div{padding:13px 14px;border-bottom:1px solid var(--line);font-size:17px}.sug div small{display:block;color:var(--muted);font-size:13px}.sug div:active{background:#fff3c4}.th{position:relative}.th img{width:74px;height:74px;object-fit:cover;border-radius:10px;border:2px solid var(--line)}.th button{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:16px}</style>
+<style>.lastv{background:#fff8dc;border:2px solid var(--gold);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:17px;line-height:1.45}.note{position:absolute;left:0;right:0;bottom:calc(100% - 6px);z-index:30;background:#fff8dc;border:2px solid var(--gold);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.35;box-shadow:0 10px 28px rgba(0,0,0,.22);animation:rise .18s ease-out}.note:after{content:"";position:absolute;left:28px;bottom:-11px;width:18px;height:18px;background:#fff8dc;border-right:2px solid var(--gold);border-bottom:2px solid var(--gold);transform:rotate(45deg)}@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.sect{grid-column:1/-1;font-weight:800;color:var(--maroon);text-transform:uppercase;letter-spacing:.6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:6px}.seg{display:flex;gap:10px}.seg input{position:absolute;opacity:0;pointer-events:none}.seg label{flex:1;margin:0;text-align:center;padding:15px;border:2px solid #cfc7b6;border-radius:10px;font-weight:800;font-size:18px;background:#fff;cursor:pointer;touch-action:manipulation}.seg input:checked+label{background:var(--maroon);color:#fff;border-color:var(--maroon)}.sug{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:2px solid var(--maroon);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}.sug div{padding:13px 14px;border-bottom:1px solid var(--line);font-size:17px}.sug div small{display:block;color:var(--muted);font-size:13px}.sug div:active{background:#fff3c4}.th{position:relative}.th img{width:74px;height:74px;object-fit:cover;border-radius:10px;border:2px solid var(--line)}.th button{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:16px}</style>
 </head><body>
 <header><div><h1>SAFE CARGO · CREW</h1><small id="sub">Live manifest</small></div><button class="btn light" id="out" style="min-height:42px;font-size:15px" hidden>Log out</button></header>
 <div class="wrap">
@@ -20,6 +20,7 @@
 
 <div id="v-voyage" class="hidden">
   <div class="card">
+    <div id="lastv" class="lastv">Checking the last voyage…</div>
     <h2 style="margin-top:0">Which voyage?</h2>
     <p style="color:var(--muted);margin-top:0">Enter the voyage number and the date. Every package gets its BL number automatically: the voyage number followed by -01, -02, -03... If another crew member already started this voyage, you join the same list.</p>
     <div class="grid two">
@@ -29,6 +30,11 @@
     </div>
     <div style="height:14px"></div>
     <button class="btn block" id="start">Start / join</button>
+    <button class="btn light block" id="ballast" style="margin-top:10px">⚓ Vessel is in ballast (no cargo)</button>
+    <div id="bconfirm" class="card hidden" style="border:2px solid var(--maroon);margin:12px 0 0">
+      <b id="bq"></b>
+      <div style="display:flex;gap:10px;margin-top:12px"><button class="btn block" id="byes">Yes, process in ballast</button><button class="btn light block" id="bno">Cancel</button></div>
+    </div>
     <div id="vmsg" class="msg err hidden"></div>
   </div>
   <div class="card"><h3 style="margin-top:0">Open voyages</h3><div id="vlist"></div></div>
@@ -37,7 +43,7 @@
 <div id="v-add" class="hidden">
   <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <div><b id="mtitle"></b><div style="color:var(--muted);font-size:14px"><span class="live-dot" id="dot"></span><span id="conn">Connected</span> · <span id="mcount">0</span> aboard</div></div>
-    <button class="btn light" id="change" style="min-height:44px;font-size:15px">Change voyage</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn light hidden" id="toBallast" style="min-height:44px;font-size:15px">⚓ In ballast</button><button class="btn light" id="change" style="min-height:44px;font-size:15px">Change voyage</button></div>
   </div>
   <div id="closed" class="msg err hidden">This manifest has been closed by the agent's office.</div>
   <div class="card" id="form">
@@ -112,7 +118,7 @@ $('login').onclick = async () => {
 $('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('login').click(); });
 
 async function loadVoyages() {
-  show('v-voyage');
+  show('v-voyage'); loadLast();
   try {
     const list = await (await api('/manifests')).json();
     const open = list.filter(m => m.status === 'open');
@@ -130,10 +136,35 @@ async function enter(num, vessel, vdate) {
     const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voyage_number: num, date_of_departure: vdate, vessel }) });
     const j = await res.json(); if (!res.ok) return say($('vmsg'), j.detail || 'Could not start.');
     S.m = j.manifest; S.recent = []; $('mtitle').textContent = 'Voyage ' + S.m.voyage_number + ' · ' + S.m.date_of_departure + (S.m.vessel ? ' · ' + S.m.vessel : '');
-    $('mcount').textContent = S.m.count; $('closed').classList.toggle('hidden', S.m.status === 'open'); $('form').classList.toggle('hidden', S.m.status !== 'open');
+    $('mcount').textContent = S.m.count; $('closed').textContent = S.m.ballast ? '⚓ This voyage is recorded IN BALLAST (no cargo).' : "This manifest has been closed by the agent's office."; $('closed').classList.toggle('hidden', S.m.status === 'open'); $('form').classList.toggle('hidden', S.m.status !== 'open');
     $('who').value = localStorage.getItem('live_who') || ''; renderRecent(); show('v-add'); setTimeout(() => $('shp').focus(), 150); flush(); poll();
   } catch (e) { say($('vmsg'), 'No connection. Try again.'); }
 }
+function fmtD(iso) { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+async function loadLast() {
+  try { const l = (await (await api('/last-voyage')).json()).last;
+    $('lastv').innerHTML = l ? `Last voyage: <b>${esc(l.voyage_number || l.manifest_number)}</b> on <b>${esc(fmtD(l.date_of_departure || l.arrival_date))}</b>` + (l.ballast ? ' (in ballast, no cargo)' : ` (${l.count} BL${l.count === 1 ? '' : 's'})`) + '<div style="font-size:14px;color:var(--muted)">Enter the new voyage number below.</div>' : 'No previous voyage yet. This will be the first one.';
+  } catch (e) { $('lastv').textContent = 'Could not check the last voyage. You can still start one below.'; } }
+function ballastAsk() {
+  const voy = $('mnum').value.trim(), d = $('vdate').value;
+  if (!voy) return say($('vmsg'), 'Enter the voyage number.');
+  if (!d) return say($('vmsg'), 'Choose the date.');
+  $('vmsg').classList.add('hidden');
+  $('bq').textContent = `Process voyage ${voy.toUpperCase()} dated ${fmtD(d)} as IN BALLAST, with no cargo aboard?`;
+  $('bconfirm').classList.remove('hidden'); }
+$('ballast').onclick = ballastAsk;
+$('bno').onclick = () => $('bconfirm').classList.add('hidden');
+$('byes').onclick = async () => {
+  const body = { voyage_number: $('mnum').value.trim(), date_of_departure: $('vdate').value, vessel: $('vessel').value.trim() };
+  $('byes').disabled = true;
+  try { const res = await api('/ballast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const j = await res.json().catch(() => ({}));
+    $('bconfirm').classList.add('hidden');
+    if (!res.ok) return say($('vmsg'), j.detail || 'Could not record it.');
+    ['mnum', 'vessel', 'vdate'].forEach(i => $(i).value = '');
+    say($('vmsg'), '✓ Voyage ' + j.manifest.voyage_number + ' recorded IN BALLAST (no cargo).', 'ok'); loadVoyages();
+  } catch (e) { $('bconfirm').classList.add('hidden'); say($('vmsg'), 'No connection. Try again when you have signal.'); }
+  finally { $('byes').disabled = false; } };
+$('toBallast').onclick = async () => { await loadVoyages(); $('mnum').value = S.m.voyage_number || ''; $('vdate').value = S.m.date_of_departure || ''; $('vessel').value = S.m.vessel || ''; ballastAsk(); };
 $('change').onclick = loadVoyages;
 
 function renderRecent() {
@@ -206,7 +237,7 @@ function setConn(on) { $('dot').classList.toggle('off', !on); $('conn').textCont
 async function poll() {
   if (!S.m || $('v-add').classList.contains('hidden')) return;
   try { const j = await (await api(`/manifests/${S.m.id}/items?since=9999999999`)).json(); $('mcount').textContent = j.total.count;
-    $('closed').classList.toggle('hidden', j.status === 'open'); $('form').classList.toggle('hidden', j.status !== 'open'); setConn(true); if (S.queue.length) flush(); }
+    $('closed').textContent = j.manifest.ballast ? '⚓ This voyage is recorded IN BALLAST (no cargo).' : "This manifest has been closed by the agent's office."; $('closed').classList.toggle('hidden', j.status === 'open'); $('form').classList.toggle('hidden', j.status !== 'open'); $('toBallast').classList.toggle('hidden', !(j.total.count === 0 && j.status === 'open')); setConn(true); if (S.queue.length) flush(); }
   catch (e) { setConn(false); }
 }
 setInterval(poll, 6000);

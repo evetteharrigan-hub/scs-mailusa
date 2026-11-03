@@ -41,6 +41,7 @@
       <button class="btn" id="pdf">Download PDF</button>
     </div>
   </div>
+  <div id="ballastbar" class="msg warn hidden">⚓ This voyage is recorded IN BALLAST: no cargo aboard. Use Reopen if cargo needs to be added.</div>
   <div class="stats" style="margin-bottom:14px"><div class="stat"><b id="sc">0</b><span>BL entries</span></div><div class="stat"><b id="sp">0</b><span>Pieces</span></div><div class="stat"><b id="sw">0</b><span>Weight kg</span></div></div>
   <div class="card"><b>Add an entry</b>
     <div class="grid three" style="margin-top:10px"><div><label>Consignee</label><input id="a-c"></div><div><label>Description</label><input id="a-d"></div>
@@ -91,7 +92,7 @@ $('p').addEventListener('keydown', e => { if (e.key === 'Enter') $('login').clic
 async function lists() {
   view('v-list'); clearInterval(S.t);
   const l = await (await api('/manifests')).json();
-  $('vlist').innerHTML = l.length ? `<div class="tbl"><table><thead><tr><th>Voyage</th><th>Date</th><th>Vessel</th><th>Entries</th><th>Kg</th><th>Status</th><th></th></tr></thead><tbody>${l.map(m => `<tr><td><b>${esc(m.voyage_number || m.manifest_number)}</b></td><td>${esc(m.date_of_departure || m.arrival_date || '')}</td><td>${esc(m.vessel)}</td><td>${m.count}</td><td>${m.weight.toFixed(2)}</td><td><span class="pill ${m.status}">${m.status}</span></td><td><button class="btn" style="min-height:40px;font-size:15px" data-open="${m.id}">Open</button></td></tr>`).join('')}</tbody></table></div>` : 'No voyages yet. The crew start them from their screen.';
+  $('vlist').innerHTML = l.length ? `<div class="tbl"><table><thead><tr><th>Voyage</th><th>Date</th><th>Vessel</th><th>Entries</th><th>Kg</th><th>Status</th><th></th></tr></thead><tbody>${l.map(m => `<tr><td><b>${esc(m.voyage_number || m.manifest_number)}</b></td><td>${esc(m.date_of_departure || m.arrival_date || '')}</td><td>${esc(m.vessel)}</td><td>${m.count}</td><td>${m.weight.toFixed(2)}</td><td><span class="pill ${m.ballast ? '' : m.status}">${m.ballast ? '⚓ in ballast' : m.status}</span></td><td><button class="btn" style="min-height:40px;font-size:15px" data-open="${m.id}">Open</button></td></tr>`).join('')}</tbody></table></div>` : 'No voyages yet. The crew start them from their screen.';
 }
 $('vlist').onclick = e => { const b = e.target.closest('[data-open]'); if (b) openM(+b.dataset.open); };
 $('back').onclick = lists;
@@ -114,7 +115,7 @@ async function poll(first) {
   try {
     const res = await api(`/manifests/${S.m.id}/items?since=${S.since}`); const j = await res.json();
     const m = j.manifest; S.m = m; $('mt').textContent = 'Voyage ' + (m.voyage_number || m.manifest_number) + ' · ' + (m.date_of_departure || ''); $('mv').textContent = [m.vessel, m.arrival_date].filter(Boolean).join(' · ');
-    $('mst').textContent = m.status; $('mst').className = 'pill ' + m.status; $('toggle').textContent = m.status === 'open' ? 'Close voyage' : 'Reopen voyage';
+    $('mst').textContent = m.ballast ? '⚓ in ballast' : m.status; $('mst').className = 'pill ' + (m.ballast ? '' : m.status); $('ballastbar').classList.toggle('hidden', !m.ballast); $('toggle').textContent = m.status === 'open' ? 'Close voyage' : (m.ballast ? 'Reopen (removes ballast)' : 'Reopen voyage');
     j.items.forEach(i => { i._new = !first; S.items.set(i.id, i); S.since = Math.max(S.since, i.version); });
     const keep = new Set(j.all_bl);                                   // drop rows deleted elsewhere
     [...S.items.values()].forEach(i => { if (!keep.has(i.bl_number)) S.items.delete(i.id); });

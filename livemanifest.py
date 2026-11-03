@@ -45,6 +45,7 @@ def _init():
             created_at TIMESTAMPTZ DEFAULT NOW())""")
         for col in ("voyage_number", "master_awb", "date_of_departure"):
             cur.execute(f"ALTER TABLE manifests ADD COLUMN IF NOT EXISTS {col} TEXT")
+        cur.execute("ALTER TABLE manifests ADD COLUMN IF NOT EXISTS ballast BOOLEAN NOT NULL DEFAULT FALSE")
         cur.execute("""CREATE TABLE IF NOT EXISTS manifest_items (
             id SERIAL PRIMARY KEY,
             manifest_id INTEGER NOT NULL REFERENCES manifests(id) ON DELETE CASCADE,
@@ -120,7 +121,7 @@ def _m(r):
             "arrival_date": r["arrival_date"].isoformat() if r["arrival_date"] else None,
             "status": r["status"], "count": r.get("count", 0), "weight": float(r.get("weight") or 0),
             "voyage_number": r.get("voyage_number") or "", "master_awb": r.get("master_awb") or "",
-            "date_of_departure": r.get("date_of_departure") or ""}
+            "date_of_departure": r.get("date_of_departure") or "", "ballast": bool(r.get("ballast"))}
 
 
 @router.get("/manifests")
@@ -132,6 +133,53 @@ async def list_manifests(user: dict = Depends(any_live)):
                        FROM manifests m LEFT JOIN manifest_items i ON i.manifest_id = m.id
                        GROUP BY m.id ORDER BY (m.status='open') DESC, m.created_at DESC LIMIT 60""")
         return [_m(r) for r in cur.fetchall()]
+
+
+@router.get("/last-voyage")
+async def last_voyage(user: dict = Depends(any_live)):
+    """The most recently started voyage, so the crew know the last number and date before starting a new one."""
+    _init()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""SELECT m.*, COUNT(i.id) AS count, COALESCE(SUM(i.weight),0) AS weight
+                       FROM manifests m LEFT JOIN manifest_items i ON i.manifest_id = m.id
+                       GROUP BY m.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1""")
+        r = cur.fetchone()
+    return {"last": _m(r) if r else None}
+
+
+class BallastBody(BaseModel):
+    voyage_number: str
+    date_of_departure: str
+    vessel: str = ""
+
+
+@router.post("/ballast")
+async def process_ballast(body: BallastBody, user: dict = Depends(any_live)):
+    """Record a voyage as IN BALLAST (no cargo). It is stored closed, with no BL entries."""
+    _init()
+    voy = re.sub(r"\s+", "", body.voyage_number or "").upper()
+    if not voy:
+        raise HTTPException(status_code=400, detail="Voyage number is required.")
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9._/-]{0,30}", voy):
+        raise HTTPException(status_code=400, detail="Voyage number can only use letters, numbers and . / - characters.")
+    dep = portal_module.parse_date(body.date_of_departure)
+    if not dep:
+        raise HTTPException(status_code=400, detail="Enter the date.")
+    key = f"{voy} {dep.isoformat()}"
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by, status, ballast)
+                       VALUES (%s,%s,%s,%s,%s,%s,'closed',TRUE) ON CONFLICT (manifest_number) DO NOTHING""",
+                    (key, body.vessel.strip(), dep, voy, dep.isoformat(), user["role"]))
+        cur.execute("SELECT * FROM manifests WHERE manifest_number = %s FOR UPDATE", (key,))
+        m = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS c FROM manifest_items WHERE manifest_id = %s", (m["id"],))
+        n = cur.fetchone()["c"]
+        if n:
+            raise HTTPException(status_code=409, detail=f"Voyage {voy} already has {n} cargo entr{'y' if n == 1 else 'ies'}, so it cannot be recorded as in ballast.")
+        cur.execute("UPDATE manifests SET ballast = TRUE, status = 'closed' WHERE id = %s RETURNING *", (m["id"],))
+        return {"manifest": _m(cur.fetchone())}
 
 
 class NewManifest(BaseModel):
@@ -342,6 +390,7 @@ async def add_item(mid: int, body: NewItem, user: dict = Depends(any_live)):
                      body.shipper_phone.strip(), body.notify_name.strip(), body.consignee_email.strip().lower(),
                      body.cubic_feet, body.freight_usd, body.freight_terms))
         r = cur.fetchone()
+        cur.execute("UPDATE manifests SET ballast = FALSE WHERE id = %s AND ballast", (mid,))
         _save_photos(cur, mid, r["id"], body.photos, body.thumbs, who)
         _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone, body.consignee_email)
         _remember(cur, "shipper", body.shipper, body.shipper_address, body.shipper_phone)
@@ -398,7 +447,8 @@ async def set_status(mid: int, body: StatusBody, user: dict = Depends(agent_only
         raise HTTPException(status_code=400, detail="Bad status.")
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("UPDATE manifests SET status = %s WHERE id = %s", (body.status, mid))
+        cur.execute("UPDATE manifests SET status = %s, ballast = CASE WHEN %s = 'open' THEN FALSE ELSE ballast END WHERE id = %s",
+                    (body.status, body.status, mid))
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="Manifest not found.")
     return {"success": True}
@@ -544,21 +594,26 @@ def _build_pdf(m, items) -> bytes:
     it = Table([[left, right]], colWidths=[130*mm, 117*mm])
     it.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     el += [it, Spacer(1, 4*mm)]
-    data = [[Paragraph("BL No.", hdc), Paragraph("Consignee Name", hd), Paragraph("Description", hd),
-             Paragraph("Pcs", hdc), Paragraph("Weight (kg)", hdr)]]
-    for i in items:
-        w = f"{float(i['weight']):,.2f}" if i["weight"] is not None else ""
-        data.append([Paragraph(esc(bl_label(m["voyage_number"], i["bl_number"])), cellc), Paragraph(esc(i["consignee"]), cell),
-                     Paragraph(esc(i["description"]), cell), Paragraph(str(i["pieces"] or 1), cellc), Paragraph(w, cellr)])
-    data.append([Paragraph("", cell), Paragraph("", cell), bold("TOTAL", cell), bold(str(total_pcs), cellc), bold(f"{total_wt:,.2f}", cellr)])
-    t = Table(data, colWidths=[32*mm, 76*mm, 94*mm, 18*mm, 27*mm], repeatRows=1)
-    st = [("BACKGROUND", (0, 0), (-1, 0), maroon), ("GRID", (0, 0), (-1, -1), 0.4, border), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("BACKGROUND", (0, -1), (-1, -1), HexColor("#F0E6D2"))]
-    for r in range(1, len(data) - 1):
-        if r % 2 == 0:
-            st.append(("BACKGROUND", (0, r), (-1, r), cream))
-    t.setStyle(TableStyle(st))
-    el.append(t)
+    if m.get("ballast") and not items:
+        big = S("big", fontSize=30, fontName="Helvetica-Bold", textColor=maroon, alignment=TA_CENTER, spaceAfter=10)
+        sub = S("sub", fontSize=13, alignment=TA_CENTER)
+        el += [Spacer(1, 22*mm), Paragraph("VESSEL IN BALLAST", big), Paragraph("No cargo aboard for this voyage.", sub)]
+    else:
+        data = [[Paragraph("BL No.", hdc), Paragraph("Consignee Name", hd), Paragraph("Description", hd),
+                 Paragraph("Pcs", hdc), Paragraph("Weight (kg)", hdr)]]
+        for i in items:
+            w = f"{float(i['weight']):,.2f}" if i["weight"] is not None else ""
+            data.append([Paragraph(esc(bl_label(m["voyage_number"], i["bl_number"])), cellc), Paragraph(esc(i["consignee"]), cell),
+                         Paragraph(esc(i["description"]), cell), Paragraph(str(i["pieces"] or 1), cellc), Paragraph(w, cellr)])
+        data.append([Paragraph("", cell), Paragraph("", cell), bold("TOTAL", cell), bold(str(total_pcs), cellc), bold(f"{total_wt:,.2f}", cellr)])
+        t = Table(data, colWidths=[32*mm, 76*mm, 94*mm, 18*mm, 27*mm], repeatRows=1)
+        st = [("BACKGROUND", (0, 0), (-1, 0), maroon), ("GRID", (0, 0), (-1, -1), 0.4, border), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+              ("BACKGROUND", (0, -1), (-1, -1), HexColor("#F0E6D2"))]
+        for r in range(1, len(data) - 1):
+            if r % 2 == 0:
+                st.append(("BACKGROUND", (0, r), (-1, r), cream))
+        t.setStyle(TableStyle(st))
+        el.append(t)
     buf = io.BytesIO()
     def foot(c, d):
         c.saveState(); c.setFont("Helvetica", 8); c.setFillColor(grey)
