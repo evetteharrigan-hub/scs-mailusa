@@ -85,7 +85,7 @@
       <div><label for="epf">Port of departure</label><input id="epf" list="portlist" autocomplete="off" placeholder="Name"></div>
       <div><label for="epfc">Departure code</label><input id="epfc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
       <div><label for="ept">Port of arrival</label><input id="ept" list="portlist" autocomplete="off" placeholder="Name"></div>
-      <div><label for="eptc">Arrival code</label><input id="eptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div></div><datalist id="portlist2"></datalist><div style="height:14px"></div>
+      <div><label for="eptc">Arrival code</label><input id="eptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div></div><div style="height:14px"></div>
   <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn light" id="d-x">Cancel</button><button class="btn" id="d-s">Save</button></div></dialog>
 
 <script>
@@ -128,7 +128,7 @@ async function loadPorts(p, fromV) {
 function setPort(n, c, name, code) { $(n).value = name || ''; $(c).value = code || ''; }
 function wirePorts(p) { [[p + 'pf', p + 'pfc'], [p + 'pt', p + 'ptc']].forEach(([n, c]) => { $(n).addEventListener('input', () => { const f = PORTS.find(x => x.name === $(n).value.trim().toUpperCase()); if (f) $(c).value = f.code; }); }); }
 const portBody = p => ({ port_from_name: $(p + 'pf').value, port_from_code: $(p + 'pfc').value, port_to_name: $(p + 'pt').value, port_to_code: $(p + 'ptc').value });
-wirePorts('n');
+wirePorts('n'); wirePorts('e');
 function nCheck() { if (!$('nvn').value.trim()) { say($('nmsg'), 'Enter the voyage number.'); return false; } if (!$('nvd').value) { say($('nmsg'), 'Choose the date.'); return false; } $('nmsg').className = 'msg hidden'; return true; }
 $('nstart').onclick = async () => { if (!nCheck()) return;
   const res = await api('/manifests', Object.assign({ method: 'POST' }, json(Object.assign({ voyage_number: $('nvn').value, date_of_departure: $('nvd').value, vessel: $('nvv').value }, portBody('n'))))); const j = await res.json();
@@ -199,7 +199,7 @@ $('rows').onclick = async e => {
 };
 $('toggle').onclick = async () => { await api(`/manifests/${S.m.id}/status`, Object.assign({ method: 'POST' }, json({ status: S.m.status === 'open' ? 'closed' : 'open' }))); poll(); };
 $('pdf').onclick = async () => { const res = await api(`/manifests/${S.m.id}/pdf`); const b = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `SCS_Live_Manifest_${S.m.manifest_number.replace(/\W+/g, '_')}.pdf`; document.body.appendChild(a); a.click(); a.remove(); };
-$('editm').onclick = () => { $('d-n').value = S.m.voyage_number || S.m.manifest_number; $('d-v').value = S.m.vessel || ''; $('d-a').value = S.m.arrival_date || ''; $('d-m').value = S.m.master_awb || ''; $('d-dep').value = S.m.date_of_departure || ''; loadPorts('e', S.m); wirePorts('e'); $('dlg').showModal(); };
+$('editm').onclick = () => { $('d-n').value = S.m.voyage_number || S.m.manifest_number; $('d-v').value = S.m.vessel || ''; $('d-a').value = S.m.arrival_date || ''; $('d-m').value = S.m.master_awb || ''; $('d-dep').value = S.m.date_of_departure || ''; $('dlg').showModal(); loadPorts('e', S.m); };
 $('d-x').onclick = () => $('dlg').close();
 $('pclose').onclick = () => $('pdlg').close();
 $('pgrid').onclick = async e => { const big = e.target.closest('[data-big]'), dl = e.target.closest('[data-delph]');
