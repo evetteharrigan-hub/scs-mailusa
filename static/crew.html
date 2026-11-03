@@ -3,7 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Crew - Live Manifest | Safe Cargo Services</title>
 <link rel="stylesheet" href="/live.css">
-<style>.sect{grid-column:1/-1;font-weight:800;color:var(--maroon);text-transform:uppercase;letter-spacing:.6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:6px}.seg{display:flex;gap:10px}.seg input{position:absolute;opacity:0;pointer-events:none}.seg label{flex:1;margin:0;text-align:center;padding:15px;border:2px solid #cfc7b6;border-radius:10px;font-weight:800;font-size:18px;background:#fff;cursor:pointer;touch-action:manipulation}.seg input:checked+label{background:var(--maroon);color:#fff;border-color:var(--maroon)}.sug{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:2px solid var(--maroon);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}.sug div{padding:13px 14px;border-bottom:1px solid var(--line);font-size:17px}.sug div small{display:block;color:var(--muted);font-size:13px}.sug div:active{background:#fff3c4}.th{position:relative}.th img{width:74px;height:74px;object-fit:cover;border-radius:10px;border:2px solid var(--line)}.th button{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:16px}</style>
+<style>.note{position:absolute;left:0;right:0;bottom:calc(100% - 6px);z-index:30;background:#fff8dc;border:2px solid var(--gold);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.35;box-shadow:0 10px 28px rgba(0,0,0,.22);animation:rise .18s ease-out}.note:after{content:"";position:absolute;left:28px;bottom:-11px;width:18px;height:18px;background:#fff8dc;border-right:2px solid var(--gold);border-bottom:2px solid var(--gold);transform:rotate(45deg)}@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.sect{grid-column:1/-1;font-weight:800;color:var(--maroon);text-transform:uppercase;letter-spacing:.6px;font-size:13px;border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:6px}.seg{display:flex;gap:10px}.seg input{position:absolute;opacity:0;pointer-events:none}.seg label{flex:1;margin:0;text-align:center;padding:15px;border:2px solid #cfc7b6;border-radius:10px;font-weight:800;font-size:18px;background:#fff;cursor:pointer;touch-action:manipulation}.seg input:checked+label{background:var(--maroon);color:#fff;border-color:var(--maroon)}.sug{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:2px solid var(--maroon);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto}.sug div{padding:13px 14px;border-bottom:1px solid var(--line);font-size:17px}.sug div small{display:block;color:var(--muted);font-size:13px}.sug div:active{background:#fff3c4}.th{position:relative}.th img{width:74px;height:74px;object-fit:cover;border-radius:10px;border:2px solid var(--line)}.th button{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:0;background:var(--red);color:#fff;font-size:16px}</style>
 </head><body>
 <header><div><h1>SAFE CARGO · CREW</h1><small id="sub">Live manifest</small></div><button class="btn light" id="out" style="min-height:42px;font-size:15px" hidden>Log out</button></header>
 <div class="wrap">
@@ -56,7 +56,9 @@
       <div><label for="cph">Contact number <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="cph" type="tel" inputmode="tel" autocomplete="off" placeholder="Phone"></div>
       <div style="grid-column:1/-1"><label for="cem">Email address <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="cem" type="email" inputmode="email" autocomplete="off" autocapitalize="none" placeholder="name@example.com"></div>
       <div class="sect">Cargo</div>
-      <div style="grid-column:1/-1"><label for="desc">Description</label><input id="desc" autocomplete="off" placeholder="e.g. clothes"></div>
+      <div style="grid-column:1/-1;position:relative"><label for="desc">Description</label>
+        <div id="descnote" class="note hidden" role="note"><b>Be specific.</b> Say exactly what the goods are, not just "clothes" or "boxes".<br><b>Pallets?</b> If it is on pallets, say how many (for example: 2 PALLETS OF CANNED GOODS).</div>
+        <input id="desc" autocomplete="off" placeholder="e.g. 3 boxes of women's shoes, or 2 pallets of canned goods"></div>
       <div><label for="pcs">Number of pieces</label><input id="pcs" type="number" inputmode="numeric" min="1" value="1"></div>
       <div><label for="wt">Weight (KG)</label><input id="wt" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
       <div><label for="cf">Cubic feet</label><input id="cf" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
@@ -208,6 +210,8 @@ async function poll() {
   catch (e) { setConn(false); }
 }
 setInterval(poll, 6000);
+$('desc').addEventListener('focus', () => $('descnote').classList.remove('hidden'));
+$('desc').addEventListener('blur', () => setTimeout(() => $('descnote').classList.add('hidden'), 150));
 window.addEventListener('online', () => { flush(); poll(); });
 
 if (S.token && S.role === 'crew') loadVoyages(); else show('v-login');
