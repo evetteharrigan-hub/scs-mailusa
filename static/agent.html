@@ -205,6 +205,6 @@ $('pclose').onclick = () => $('pdlg').close();
 $('pgrid').onclick = async e => { const big = e.target.closest('[data-big]'), dl = e.target.closest('[data-delph]');
   if (big) { const b = await (await api(`/photos/${big.dataset.big}`)).blob(); $('pbig').src = URL.createObjectURL(b); $('pbig').classList.remove('hidden'); $('pbig').scrollIntoView({ block: 'nearest' }); }
   if (dl) { e.preventDefault(); if (!confirm('Delete this photo?')) return; await api(`/photos/${dl.dataset.delph}`, { method: 'DELETE' }); dl.closest('div').parentElement.remove(); poll(); } };
-$('d-s').onclick = async () => { await api(`/manifests/${S.m.id}`, Object.assign({ method: 'PUT' }, json({ vessel: $('d-v').value, arrival_date: $('d-a').value, master_awb: $('d-m').value, date_of_departure: $('d-dep').value }, portBody('e')))); $('dlg').close(); poll(); };
+$('d-s').onclick = async () => { await api(`/manifests/${S.m.id}`, Object.assign({ method: 'PUT' }, json(Object.assign({ vessel: $('d-v').value, arrival_date: $('d-a').value, master_awb: $('d-m').value, date_of_departure: $('d-dep').value }, portBody('e'))))); $('dlg').close(); poll(); };
 if (S.token) lists().catch(() => view('v-login')); else view('v-login');
 </script></body></html>
