@@ -678,6 +678,7 @@ async def accounting_mark_paid(body: MarkPaidRequest, user: dict = Depends(accou
 class UnpaidRequest(BaseModel):
     tracking_number: str
     code: str = ""
+    reason: str = ""
 
 
 _undo_fails: dict = {}      # who -> (failed attempts, locked until timestamp)
@@ -710,8 +711,23 @@ async def accounting_mark_unpaid(body: UnpaidRequest, user: dict = Depends(accou
     """Undo a payment recorded by mistake: clears paid, date and method. Needs the special undo code."""
     _require_db()
     _check_undo_code(str(user.get("role") or "accounting"), body.code or "")
+    reason = re.sub(r"\s+", " ", body.reason or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=400, detail="Enter the reason for undoing this payment.")
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""CREATE TABLE IF NOT EXISTS payment_undos (
+            id SERIAL PRIMARY KEY, tracking_number TEXT NOT NULL, buyer_name TEXT, amount NUMERIC(12,2),
+            date_paid DATE, payment_method TEXT, reason TEXT NOT NULL, undone_by TEXT,
+            undone_at TIMESTAMPTZ DEFAULT NOW())""")
+        cur.execute("SELECT buyer_name, total_due, date_paid, payment_method, paid FROM shipments WHERE tracking_number = %s",
+                    (body.tracking_number.strip(),))
+        prev = cur.fetchone()
+        if prev and prev["paid"]:
+            cur.execute("""INSERT INTO payment_undos (tracking_number, buyer_name, amount, date_paid, payment_method, reason, undone_by)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                        (body.tracking_number.strip(), prev["buyer_name"], prev["total_due"], prev["date_paid"],
+                         prev["payment_method"], reason[:300], str(user.get("role") or "accounting")))
         cur.execute(f"""UPDATE shipments SET paid = FALSE, date_paid = NULL, payment_method = NULL
                         WHERE tracking_number = %s RETURNING {SHIPMENT_COLS}""", (body.tracking_number.strip(),))
         r = cur.fetchone()

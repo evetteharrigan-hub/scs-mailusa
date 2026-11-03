@@ -250,11 +250,17 @@
           </div>
         </form>
         <div id="undo-box" class="hidden" style="margin-top:16px;padding:12px 14px;border:1px dashed var(--maroon);border-radius:8px">
-          <div style="font-weight:600;color:var(--maroon);margin-bottom:6px">Undo this payment (code needed)</div>
-          <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Use this when a customer is refunded. It marks the package unpaid again and takes it out of the cash reports.</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <input type="password" id="undo-code" autocomplete="off" placeholder="Undo code" style="flex:1;min-width:140px">
-            <button type="button" class="btn btn-light" id="undo-btn">Undo payment</button>
+          <button type="button" class="btn btn-light" id="undo-start">Undo payment</button>
+          <div id="undo-form" class="hidden" style="margin-top:12px">
+            <div style="background:#fdecea;color:#8b0000;border-radius:6px;padding:10px 12px;font-weight:600;margin-bottom:10px">Only management can undo a payment.</div>
+            <div class="field"><label for="undo-reason">Reason for undoing this payment</label>
+              <textarea id="undo-reason" rows="2" maxlength="300" placeholder="e.g. Package not found, customer refunded" style="width:100%"></textarea></div>
+            <div class="field"><label for="undo-code">Management code</label>
+              <input type="password" id="undo-code" autocomplete="off" placeholder="Management code"></div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-light" id="undo-cancel">Cancel</button>
+              <button type="button" class="btn btn-primary" id="undo-btn">Confirm undo</button>
+            </div>
           </div>
         </div>
       </div>
@@ -594,7 +600,7 @@
       $('pay-section').classList.remove('hidden');
       $('pay-heading').textContent = r.paid ? 'Update Payment Record' : 'Record Payment';
       $('pay-btn').textContent = r.paid ? 'Update Payment' : 'Mark as Paid';
-      $('undo-box').classList.toggle('hidden', !r.paid); $('undo-code').value = '';
+      $('undo-box').classList.toggle('hidden', !r.paid); $('undo-code').value = ''; $('undo-reason').value = ''; $('undo-form').classList.add('hidden'); $('undo-start').classList.remove('hidden');
       $('pay-date').value = r.date_paid ? r.date_paid.slice(0, 10) : todayLocal();
       $('pay-method').value = r.payment_method || 'cash';
     }
@@ -677,20 +683,22 @@
     }
   });
 
+  $('undo-start').addEventListener('click', () => { $('undo-form').classList.remove('hidden'); $('undo-start').classList.add('hidden'); $('undo-reason').focus(); });
+  $('undo-cancel').addEventListener('click', () => { $('undo-form').classList.add('hidden'); $('undo-start').classList.remove('hidden'); $('undo-code').value = ''; $('undo-reason').value = ''; });
   $('undo-btn').addEventListener('click', async () => {
     if (!current) return;
-    const code = $('undo-code').value;
-    if (!code) { show($('detail-msg'), 'Type the undo code first.'); return; }
-    if (!confirm('Undo the payment for ' + (current.buyer_name || current.tracking_number) + '?\nIt will go back to Unpaid.')) return;
+    const reason = $('undo-reason').value.trim(), code = $('undo-code').value;
+    if (reason.length < 3) { show($('detail-msg'), 'Enter the reason for undoing this payment.'); $('undo-reason').focus(); return; }
+    if (!code) { show($('detail-msg'), 'Enter the management code.'); $('undo-code').focus(); return; }
     const btn = $('undo-btn'); btn.disabled = true; hide($('detail-msg'));
     try {
       const res = await api('/portal/accounting/mark-unpaid', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tracking_number: current.tracking_number, code })
+        body: JSON.stringify({ tracking_number: current.tracking_number, code, reason })
       });
       const data = await res.json();
       current = data.shipment; renderDetail(true);
-      show($('detail-msg'), 'Payment undone. The package is Unpaid again.', 'ok');
+      show($('detail-msg'), 'Payment undone. The package is Unpaid again. The reason has been recorded.', 'ok');
       acSearch();
     } catch (err) { show($('detail-msg'), err.message); }
     finally { btn.disabled = false; $('undo-code').value = ''; }
