@@ -21,10 +21,11 @@
 <div id="v-voyage" class="hidden">
   <div class="card">
     <h2 style="margin-top:0">Which voyage?</h2>
-    <p style="color:var(--muted);margin-top:0">Type the manifest number. If another crew member already started it, you join the same list.</p>
+    <p style="color:var(--muted);margin-top:0">Enter the voyage number and the date. Every package gets its BL number automatically: the voyage number followed by -01, -02, -03... If another crew member already started this voyage, you join the same list.</p>
     <div class="grid two">
-      <div><label for="mnum">Manifest number</label><input id="mnum" placeholder="e.g. 2026 774"></div>
-      <div><label for="vessel">Vessel (optional)</label><input id="vessel" placeholder="Vessel name"></div>
+      <div><label for="mnum">Voyage number</label><input id="mnum" autocapitalize="characters" autocomplete="off" placeholder="e.g. AA1234"></div>
+      <div><label for="vdate">Date</label><input id="vdate" type="date"></div>
+      <div style="grid-column:1/-1"><label for="vessel">Vessel (optional)</label><input id="vessel" placeholder="Vessel name"></div>
     </div>
     <div style="height:14px"></div>
     <button class="btn block" id="start">Start / join</button>
@@ -73,7 +74,7 @@
       <div style="grid-column:1/-1"><label for="who">Your name (so the office knows who added it)</label><input id="who" autocomplete="off" placeholder="Crew member name"></div>
     </div>
     <div style="height:14px"></div>
-    <button class="btn block" id="add" style="min-height:64px;font-size:20px">Add to manifest (next BL number is given automatically)</button>
+    <button class="btn block" id="add" style="min-height:64px;font-size:20px">Add to manifest (BL number is given automatically)</button>
     <div id="amsg" class="msg hidden"></div>
   </div>
   <div class="card recent"><h3 style="margin-top:0">Added from this device</h3><div id="recent"><div style="color:var(--muted)">Nothing yet.</div></div></div>
@@ -114,18 +115,19 @@ async function loadVoyages() {
     const list = await (await api('/manifests')).json();
     const open = list.filter(m => m.status === 'open');
     $('vlist').innerHTML = open.length ? open.map(m => `<div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">
-        <div><b>${esc(m.manifest_number)}</b> <span class="pill open">open</span><div style="color:var(--muted);font-size:14px">${esc(m.vessel || '')} · ${m.count} aboard</div></div>
-        <button class="btn" style="min-height:46px;font-size:16px" data-join="${esc(m.manifest_number)}" data-v="${esc(m.vessel || '')}">Join</button></div>`).join('') : '<div style="color:var(--muted)">No open voyages yet. Start one above.</div>';
+        <div><b>${esc(m.voyage_number || m.manifest_number)}</b> · ${esc(m.date_of_departure || '')} <span class="pill open">open</span><div style="color:var(--muted);font-size:14px">${esc(m.vessel || '')} · ${m.count} aboard</div></div>
+        <button class="btn" style="min-height:46px;font-size:16px" data-join="${esc(m.voyage_number || m.manifest_number)}" data-d="${esc(m.date_of_departure || m.arrival_date || '')}" data-v="${esc(m.vessel || '')}">Join</button></div>`).join('') : '<div style="color:var(--muted)">No open voyages yet. Start one above.</div>';
   } catch (e) { $('vlist').textContent = e.message; }
 }
-$('vlist').onclick = e => { const b = e.target.closest('[data-join]'); if (b) enter(b.dataset.join, b.dataset.v); };
-$('start').onclick = () => enter($('mnum').value.trim(), $('vessel').value.trim());
-async function enter(num, vessel) {
-  if (!num) return say($('vmsg'), 'Enter the manifest number.');
+$('vlist').onclick = e => { const b = e.target.closest('[data-join]'); if (b) enter(b.dataset.join, b.dataset.v, b.dataset.d); };
+$('start').onclick = () => enter($('mnum').value.trim(), $('vessel').value.trim(), $('vdate').value);
+async function enter(num, vessel, vdate) {
+  if (!num) return say($('vmsg'), 'Enter the voyage number.');
+  if (!vdate) return say($('vmsg'), 'Choose the date.');
   try {
-    const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manifest_number: num, vessel }) });
+    const res = await api('/manifests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voyage_number: num, date_of_departure: vdate, vessel }) });
     const j = await res.json(); if (!res.ok) return say($('vmsg'), j.detail || 'Could not start.');
-    S.m = j.manifest; S.recent = []; $('mtitle').textContent = 'Manifest ' + S.m.manifest_number + (S.m.vessel ? ' · ' + S.m.vessel : '');
+    S.m = j.manifest; S.recent = []; $('mtitle').textContent = 'Voyage ' + S.m.voyage_number + ' · ' + S.m.date_of_departure + (S.m.vessel ? ' · ' + S.m.vessel : '');
     $('mcount').textContent = S.m.count; $('closed').classList.toggle('hidden', S.m.status === 'open'); $('form').classList.toggle('hidden', S.m.status !== 'open');
     $('who').value = localStorage.getItem('live_who') || ''; renderRecent(); show('v-add'); setTimeout(() => $('shp').focus(), 150); flush(); poll();
   } catch (e) { say($('vmsg'), 'No connection. Try again.'); }
@@ -135,7 +137,7 @@ $('change').onclick = loadVoyages;
 function renderRecent() {
   const q = S.queue.filter(x => x.mid === S.m.id).map(x => ({ consignee: x.body.consignee, description: x.body.description, pending: true }));
   const all = q.concat(S.recent.slice().reverse());
-  $('recent').innerHTML = all.length ? all.slice(0, 40).map(i => `<div class="row"><div><b>${i.pending ? 'BL pending' : 'BL ' + i.bl_number}</b> · ${esc(i.consignee || '')}<div style="color:var(--muted);font-size:14px">${esc(i.description || '')}</div></div><div>${i.pending ? '<span class="pill" style="background:#fff3cd">waiting to send</span>' : '<span style="color:var(--green);font-weight:700">✓ added</span>'}</div></div>`).join('') : '<div style="color:var(--muted)">Nothing yet.</div>';
+  $('recent').innerHTML = all.length ? all.slice(0, 40).map(i => `<div class="row"><div><b>${i.pending ? 'BL pending' : esc(i.bl)}</b> · ${esc(i.consignee || '')}<div style="color:var(--muted);font-size:14px">${esc(i.description || '')}</div></div><div>${i.pending ? '<span class="pill" style="background:#fff3cd">waiting to send</span>' : '<span style="color:var(--green);font-weight:700">✓ added</span>'}</div></div>`).join('') : '<div style="color:var(--muted)">Nothing yet.</div>';
 }
 S.pics = [];   // {full, thumb} data URLs for the entry being typed
 function clearForm() { ['cons','caddr','cph','cem','notif','shp','saddr','sph','desc','wt','cf','fr'].forEach(i => $(i).value = ''); $('pcs').value = 1; document.querySelectorAll('input[name=terms]').forEach(r => r.checked = false); S.pics = []; drawThumbs(); $('shp').focus(); }
@@ -180,7 +182,7 @@ async function send(entry, fromForm) {
   try {
     const res = await api(`/manifests/${entry.mid}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry.body) });
     const j = await res.json().catch(() => ({}));
-    if (res.ok) { S.recent.push(j.item); if (fromForm) { say($('amsg'), '✓ Added. BL number ' + j.item.bl_number, 'ok'); clearForm(); } navigator.vibrate && navigator.vibrate(60); poll(); renderRecent(); return true; }
+    if (res.ok) { S.recent.push(j.item); if (fromForm) { say($('amsg'), '✓ Added. BL number ' + j.item.bl, 'ok'); clearForm(); } navigator.vibrate && navigator.vibrate(60); poll(); renderRecent(); return true; }
     if (res.status === 409 || res.status === 400) { if (fromForm) { say($('amsg'), j.detail || 'Not added.', 'err'); } return true; /* do not retry */ }
     throw new Error('server');
   } catch (e) {

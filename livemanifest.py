@@ -135,31 +135,45 @@ async def list_manifests(user: dict = Depends(any_live)):
 
 
 class NewManifest(BaseModel):
-    manifest_number: str
+    voyage_number: str = ""
+    manifest_number: str = ""      # older callers
     vessel: str = ""
     arrival_date: str = ""
+    date_of_departure: str = ""
 
 
 @router.post("/manifests")
 async def create_manifest(body: NewManifest, user: dict = Depends(any_live)):
     _init()
-    num = body.manifest_number.strip()
-    if not num:
-        raise HTTPException(status_code=400, detail="Manifest number is required.")
-    arrival = portal_module.parse_date(body.arrival_date) or portal_module.today_ast()
+    voy = re.sub(r"\s+", "", (body.voyage_number or body.manifest_number or "")).upper()
+    if not voy:
+        raise HTTPException(status_code=400, detail="Voyage number is required.")
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9._/-]{0,30}", voy):
+        raise HTTPException(status_code=400, detail="Voyage number can only use letters, numbers and . / - characters.")
+    dep = portal_module.parse_date(body.date_of_departure or body.arrival_date)
+    if not dep:
+        raise HTTPException(status_code=400, detail="Enter the date.")
+    arrival = portal_module.parse_date(body.arrival_date) or dep
+    key = f"{voy} {dep.isoformat()}"      # one voyage = voyage number + date
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM manifests WHERE manifest_number = %s", (num,))
+        cur.execute("SELECT * FROM manifests WHERE manifest_number = %s", (key,))
         r = cur.fetchone()
         if r:  # joining an existing voyage is how a second crew member gets on the same list
             return {"manifest": _m(r), "existing": True}
-        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, created_by)
-                       VALUES (%s,%s,%s,%s) RETURNING *""", (num, body.vessel.strip(), arrival, user["role"]))
+        cur.execute("""INSERT INTO manifests (manifest_number, vessel, arrival_date, voyage_number, date_of_departure, created_by)
+                       VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""", (key, body.vessel.strip(), arrival, voy, dep.isoformat(), user["role"]))
         return {"manifest": _m(cur.fetchone()), "existing": False}
 
 
-def _item(r):
-    return {"id": r["id"], "bl_number": r["bl_number"], "consignee": r["consignee"] or "",
+def bl_label(voyage: str, n: int) -> str:
+    """BL reference = voyage number + '-' + 2-digit sequence (-01, -02 ... -10 ... -100)."""
+    return f"{(voyage or '').strip()}-{int(n):02d}"
+
+
+def _item(r, voyage: str = ""):
+    return {"id": r["id"], "bl_number": r["bl_number"], "bl": bl_label(voyage or r.get("voyage_number", ""), r["bl_number"]),
+            "consignee": r["consignee"] or "",
             "description": r["description"] or "", "pieces": r["pieces"] or 1,
             "weight": float(r["weight"]) if r["weight"] is not None else None,
             "shipper": r.get("shipper") or "", "shipper_address": r.get("shipper_address") or "",
@@ -186,7 +200,7 @@ async def get_items(mid: int, since: float = Query(0), user: dict = Depends(any_
             raise HTTPException(status_code=404, detail="Manifest not found.")
         cur.execute("""SELECT i.*, (SELECT COUNT(*) FROM manifest_photos p WHERE p.item_id = i.id) AS photos
                        FROM manifest_items i WHERE i.manifest_id = %s AND i.updated_at > to_timestamp(%s) ORDER BY i.bl_number""", (mid, since))
-        items = [_item(r) for r in cur.fetchall()]
+        items = [_item(r, m["voyage_number"]) for r in cur.fetchall()]
         cur.execute("SELECT COUNT(*) AS c, COALESCE(SUM(weight),0) AS w, COALESCE(SUM(pieces),0) AS p FROM manifest_items WHERE manifest_id = %s", (mid,))
         t = cur.fetchone()
         cur.execute("SELECT bl_number FROM manifest_items WHERE manifest_id = %s", (mid,))
@@ -306,7 +320,7 @@ async def add_item(mid: int, body: NewItem, user: dict = Depends(any_live)):
     who = (body.added_by or user["role"]).strip()[:40]
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT status, next_bl FROM manifests WHERE id = %s FOR UPDATE", (mid,))
+        cur.execute("SELECT status, next_bl, voyage_number FROM manifests WHERE id = %s FOR UPDATE", (mid,))
         m = cur.fetchone()
         if not m:
             raise HTTPException(status_code=404, detail="Manifest not found.")
@@ -314,7 +328,7 @@ async def add_item(mid: int, body: NewItem, user: dict = Depends(any_live)):
             cur.execute("SELECT * FROM manifest_items WHERE manifest_id = %s AND client_id = %s", (mid, cid))
             ex = cur.fetchone()
             if ex:
-                return {"item": _item(ex), "duplicate_retry": True}
+                return {"item": _item(ex, m["voyage_number"]), "duplicate_retry": True}
         if m["status"] != "open" and user["role"] != "agent":
             raise HTTPException(status_code=409, detail="This manifest is closed.")
         bl = m["next_bl"]
@@ -332,7 +346,7 @@ async def add_item(mid: int, body: NewItem, user: dict = Depends(any_live)):
         _remember(cur, "consignee", body.consignee, body.consignee_address, body.consignee_phone, body.consignee_email)
         _remember(cur, "shipper", body.shipper, body.shipper_address, body.shipper_phone)
         r["photos"] = len(body.photos)
-        return {"item": _item(r)}
+        return {"item": _item(r, m["voyage_number"])}
 
 
 @router.put("/manifests/{mid}/items/{iid}")
@@ -357,7 +371,8 @@ async def edit_item(mid: int, iid: int, body: NewItem, user: dict = Depends(agen
         _remember(cur, "shipper", body.shipper, body.shipper_address, body.shipper_phone)
         cur.execute("SELECT COUNT(*) AS c FROM manifest_photos WHERE item_id = %s", (iid,))
         r["photos"] = cur.fetchone()["c"]
-        return {"item": _item(r)}
+        cur.execute("SELECT voyage_number FROM manifests WHERE id = %s", (mid,))
+        return {"item": _item(r, cur.fetchone()["voyage_number"])}
 
 
 @router.delete("/manifests/{mid}/items/{iid}")
@@ -403,10 +418,10 @@ async def edit_manifest(mid: int, body: EditManifest, user: dict = Depends(agent
     arrival = portal_module.parse_date(body.arrival_date)
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""UPDATE manifests SET vessel=%s, arrival_date=COALESCE(%s, arrival_date), voyage_number=%s,
+        # the voyage number is NOT editable here: BL numbers are issued from it, so changing it would rename them all
+        cur.execute("""UPDATE manifests SET vessel=%s, arrival_date=COALESCE(%s, arrival_date),
                        master_awb=%s, date_of_departure=%s WHERE id=%s RETURNING *""",
-                    (body.vessel.strip(), arrival, body.voyage_number.strip(), body.master_awb.strip(),
-                     body.date_of_departure.strip(), mid))
+                    (body.vessel.strip(), arrival, body.master_awb.strip(), body.date_of_departure.strip(), mid))
         r = cur.fetchone()
         if not r:
             raise HTTPException(status_code=404, detail="Manifest not found.")
@@ -491,7 +506,7 @@ async def manifest_pdf(mid: int, user: dict = Depends(any_live)):
         cur.execute("SELECT * FROM manifest_items WHERE manifest_id = %s ORDER BY bl_number", (mid,))
         items = cur.fetchall()
     pdf = _build_pdf(m, items)
-    clean = re.sub(r"[^A-Z0-9]", "_", m["manifest_number"].upper()).strip("_")
+    clean = re.sub(r"[^A-Z0-9]", "_", (m["voyage_number"] or m["manifest_number"]).upper()).strip("_")
     return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="SCS_Live_Manifest_{clean}.pdf"'})
 
@@ -522,7 +537,7 @@ def _build_pdf(m, items) -> bytes:
     arrival = m["arrival_date"].strftime("%B %d, %Y").replace(" 0", " ") if m["arrival_date"] else ""
     el = [Paragraph("SAFE CARGO SERVICES", co), Paragraph("Sandy Ground, Anguilla  |  Tel: (264) 498-0194", ad),
           Paragraph("CARGO MANIFEST", ti)]
-    left = [Paragraph(f"<b>Manifest No.:</b> {esc(m['manifest_number'])}", inf), Paragraph(f"<b>Vessel:</b> {esc(m['vessel'] or '-')}", inf),
+    left = [Paragraph(f"<b>Voyage No.:</b> {esc(m['voyage_number'] or m['manifest_number'])}", inf), Paragraph(f"<b>Vessel:</b> {esc(m['vessel'] or '-')}", inf),
             Paragraph(f"<b>Date of Arrival:</b> {arrival}", inf)]
     right = [Paragraph(f"<b>Total Shipments:</b> {len(items)}", inf), Paragraph(f"<b>Total Pieces:</b> {total_pcs}", inf),
              Paragraph(f"<b>Total Weight:</b> {total_wt:,.2f} kg", inf)]
@@ -533,10 +548,10 @@ def _build_pdf(m, items) -> bytes:
              Paragraph("Pcs", hdc), Paragraph("Weight (kg)", hdr)]]
     for i in items:
         w = f"{float(i['weight']):,.2f}" if i["weight"] is not None else ""
-        data.append([Paragraph(str(i["bl_number"]), cellc), Paragraph(esc(i["consignee"]), cell),
+        data.append([Paragraph(esc(bl_label(m["voyage_number"], i["bl_number"])), cellc), Paragraph(esc(i["consignee"]), cell),
                      Paragraph(esc(i["description"]), cell), Paragraph(str(i["pieces"] or 1), cellc), Paragraph(w, cellr)])
     data.append([Paragraph("", cell), Paragraph("", cell), bold("TOTAL", cell), bold(str(total_pcs), cellc), bold(f"{total_wt:,.2f}", cellr)])
-    t = Table(data, colWidths=[22*mm, 80*mm, 100*mm, 18*mm, 27*mm], repeatRows=1)
+    t = Table(data, colWidths=[32*mm, 76*mm, 94*mm, 18*mm, 27*mm], repeatRows=1)
     st = [("BACKGROUND", (0, 0), (-1, 0), maroon), ("GRID", (0, 0), (-1, -1), 0.4, border), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
           ("BACKGROUND", (0, -1), (-1, -1), HexColor("#F0E6D2"))]
     for r in range(1, len(data) - 1):
@@ -553,10 +568,10 @@ def _build_pdf(m, items) -> bytes:
     return buf.getvalue()
 
 
-def _xml_row(i):
+def _xml_row(i, voyage: str = ""):
     """Map a live entry onto the row shape the existing waybill generator expects. Anything the crew did not
     enter stays blank rather than being invented."""
-    return {"tracking_number": str(i["bl_number"]), "buyer_name": (i["consignee"] or "").strip(),
+    return {"tracking_number": bl_label(voyage, i["bl_number"]), "buyer_name": (i["consignee"] or "").strip(),
             "items_description": i["description"] or "", "weight": str(float(i["weight"])) if i["weight"] is not None else "0",
             "items": str(i["pieces"] or 1), "shipper": (i.get("shipper") or "").strip(),
             "shipper_address1": " ".join(x for x in ((i.get("shipper_address") or "").strip(), (i.get("shipper_phone") or "").strip()) if x),
@@ -576,7 +591,7 @@ def _xml_for(m, i) -> bytes:
     info = {"master_awb": m["master_awb"], "voyage_number": m["voyage_number"] or "",
             "date_of_departure": m["date_of_departure"] or "", "manifest_reference": m["manifest_number"],
             "port_of_loading_code": "MFSXM", "port_of_loading_name": "GALISBAY, ST MARTIN", "use_pieces": True}
-    return main_module.generate_waybill_xml(_xml_row(i), info, i["bl_number"])
+    return main_module.generate_waybill_xml(_xml_row(i, m["voyage_number"] or ""), info, i["bl_number"])
 
 
 @router.get("/manifests/{mid}/items/{iid}/xml")
@@ -593,4 +608,4 @@ async def item_xml(mid: int, iid: int, user: dict = Depends(agent_only)):
     xml = _xml_for(m, i)
     name = re.sub(r"[^A-Z0-9]+", "_", (i["consignee"] or "").upper()).strip("_") or "CONSIGNEE"
     return StreamingResponse(io.BytesIO(xml), media_type="application/xml",
-                             headers={"Content-Disposition": f'attachment; filename="{name}_BL{i["bl_number"]}_waybill.xml"'})
+                             headers={"Content-Disposition": f'attachment; filename="{name}_{re.sub(r"[^A-Za-z0-9_-]", "_", bl_label(m["voyage_number"], i["bl_number"]))}_waybill.xml"'})
