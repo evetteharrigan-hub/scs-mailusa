@@ -575,7 +575,7 @@ def _xml_for(m, i) -> bytes:
         raise HTTPException(status_code=400, detail="Add the Master AWB to this voyage first (Edit voyage).")
     info = {"master_awb": m["master_awb"], "voyage_number": m["voyage_number"] or "",
             "date_of_departure": m["date_of_departure"] or "", "manifest_reference": m["manifest_number"],
-            "port_of_loading_code": "USMIA", "port_of_loading_name": "MIAMI, USA", "use_pieces": True}
+            "port_of_loading_code": "MFSXM", "port_of_loading_name": "GALISBAY, ST MARTIN", "use_pieces": True}
     return main_module.generate_waybill_xml(_xml_row(i), info, i["bl_number"])
 
 
