@@ -32,6 +32,7 @@
       <div><label for="cpfc">Departure code</label><input id="cpfc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
       <div><label for="cpt">Port of arrival</label><input id="cpt" list="portlist" autocomplete="off" placeholder="Name"></div>
       <div><label for="cptc">Arrival code</label><input id="cptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
+      <div style="grid-column:1/-1"><button type="button" class="btn light" id="cswap" style="min-height:44px;font-size:15px">⇄ Swap ports (voyage starts at the other end)</button></div>
       <datalist id="portlist"></datalist>
     </div>
     <div style="height:14px"></div>
@@ -144,8 +145,9 @@ async function loadPorts(p, fromV) {
 }
 function setPort(n, c, name, code) { $(n).value = name || ''; $(c).value = code || ''; }
 function wirePorts(p) { [[p + 'pf', p + 'pfc'], [p + 'pt', p + 'ptc']].forEach(([n, c]) => { $(n).addEventListener('input', () => { const f = PORTS.find(x => x.name === $(n).value.trim().toUpperCase()); if (f) $(c).value = f.code; }); }); }
+function swapPorts(p) { const g = i => $(p + i).value; const a = [g('pf'), g('pfc')], b = [g('pt'), g('ptc')]; setPort(p + 'pf', p + 'pfc', b[0], b[1]); setPort(p + 'pt', p + 'ptc', a[0], a[1]); }
 const portBody = p => ({ port_from_name: $(p + 'pf').value, port_from_code: $(p + 'pfc').value, port_to_name: $(p + 'pt').value, port_to_code: $(p + 'ptc').value });
-wirePorts('c');
+wirePorts('c'); $('cswap').onclick = () => swapPorts('c'); 
 $('start').onclick = () => enter($('mnum').value.trim(), $('vessel').value.trim(), $('vdate').value);
 async function enter(num, vessel, vdate) {
   if (!num) return say($('vmsg'), 'Enter the voyage number.');

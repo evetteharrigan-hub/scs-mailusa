@@ -37,6 +37,7 @@
       <div><label for="npfc">Departure code</label><input id="npfc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
       <div><label for="npt">Port of arrival</label><input id="npt" list="portlist" autocomplete="off" placeholder="Name"></div>
       <div><label for="nptc">Arrival code</label><input id="nptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
+      <div style="grid-column:1/-1"><button type="button" class="btn light" id="nswap" style="min-height:44px;font-size:15px">⇄ Swap ports (voyage starts at the other end)</button></div>
       <datalist id="portlist"></datalist>
     </div>
     <div style="height:12px"></div>
@@ -85,7 +86,8 @@
       <div><label for="epf">Port of departure</label><input id="epf" list="portlist" autocomplete="off" placeholder="Name"></div>
       <div><label for="epfc">Departure code</label><input id="epfc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
       <div><label for="ept">Port of arrival</label><input id="ept" list="portlist" autocomplete="off" placeholder="Name"></div>
-      <div><label for="eptc">Arrival code</label><input id="eptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div></div><div style="height:14px"></div>
+      <div><label for="eptc">Arrival code</label><input id="eptc" autocapitalize="characters" autocomplete="off" placeholder="Code"></div>
+      <div style="grid-column:1/-1"><button type="button" class="btn light" id="eswap" style="min-height:44px;font-size:15px">⇄ Swap ports (voyage starts at the other end)</button></div></div><div style="height:14px"></div>
   <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn light" id="d-x">Cancel</button><button class="btn" id="d-s">Save</button></div></dialog>
 
 <script>
@@ -127,8 +129,9 @@ async function loadPorts(p, fromV) {
 }
 function setPort(n, c, name, code) { $(n).value = name || ''; $(c).value = code || ''; }
 function wirePorts(p) { [[p + 'pf', p + 'pfc'], [p + 'pt', p + 'ptc']].forEach(([n, c]) => { $(n).addEventListener('input', () => { const f = PORTS.find(x => x.name === $(n).value.trim().toUpperCase()); if (f) $(c).value = f.code; }); }); }
+function swapPorts(p) { const g = i => $(p + i).value; const a = [g('pf'), g('pfc')], b = [g('pt'), g('ptc')]; setPort(p + 'pf', p + 'pfc', b[0], b[1]); setPort(p + 'pt', p + 'ptc', a[0], a[1]); }
 const portBody = p => ({ port_from_name: $(p + 'pf').value, port_from_code: $(p + 'pfc').value, port_to_name: $(p + 'pt').value, port_to_code: $(p + 'ptc').value });
-wirePorts('n'); wirePorts('e');
+wirePorts('n'); wirePorts('e'); $('nswap').onclick = () => swapPorts('n'); $('eswap').onclick = () => swapPorts('e'); 
 function nCheck() { if (!$('nvn').value.trim()) { say($('nmsg'), 'Enter the voyage number.'); return false; } if (!$('nvd').value) { say($('nmsg'), 'Choose the date.'); return false; } $('nmsg').className = 'msg hidden'; return true; }
 $('nstart').onclick = async () => { if (!nCheck()) return;
   const res = await api('/manifests', Object.assign({ method: 'POST' }, json(Object.assign({ voyage_number: $('nvn').value, date_of_departure: $('nvd').value, vessel: $('nvv').value }, portBody('n'))))); const j = await res.json();
