@@ -154,6 +154,19 @@ def _remember_ports(cur, *ports):
                        ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()""", (code, name))
 
 
+@router.delete("/ports/{code}")
+async def delete_port(code: str, user: dict = Depends(agent_only)):
+    """Remove a saved port from the suggestions. Galis Bay and Road Bay are the automatic ports and stay."""
+    _init()
+    code = code.strip().upper()
+    if code in (DEFAULT_FROM[0], DEFAULT_TO[0]):
+        raise HTTPException(status_code=400, detail="Galis Bay and Road Bay are the automatic ports and cannot be removed.")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM live_ports WHERE code = %s", (code,))
+        return {"ok": True, "removed": cur.rowcount}
+
+
 @router.get("/ports")
 async def list_ports(user: dict = Depends(any_live)):
     _init()
