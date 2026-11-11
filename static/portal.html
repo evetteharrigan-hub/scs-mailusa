@@ -217,6 +217,13 @@
         <div id="contact-rows"></div>
         <div id="contact-msg" class="msg hidden" style="margin-top:8px"></div>
       </div>
+      <div id="proc-open-wrap" class="hidden">
+        <div class="divider"></div>
+        <div class="modal-actions" style="margin-top:0">
+          <button type="button" class="btn btn-light hidden" id="print-btn2">Print Invoice</button>
+          <button type="button" class="btn btn-gold" id="proc-open">Process this package (enter duties)</button>
+        </div>
+      </div>
       <div id="proc-section" class="hidden">
         <div class="divider"></div>
         <h4 style="margin:0 0 12px;color:var(--maroon)" id="proc-heading">Process Invoice</h4>
@@ -587,14 +594,17 @@
       ['Payment Method', esc(METHOD_LABELS[r.payment_method] || r.payment_method) || '—'],
     ];
     $('detail-list').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
-    $('proc-section').classList.add('hidden');
+    $('proc-section').classList.add('hidden'); $('proc-open-wrap').classList.add('hidden');
     if (withPayment && session.role === 'accounting' && !r.paid) {
-      $('proc-section').classList.remove('hidden');
+      // the duties form stays closed until the user asks for it, so recording a contact attempt never looks like it needs duties
+      $('proc-open-wrap').classList.remove('hidden');
+      $('proc-open').textContent = r.processed ? 'Correct customs duties' : 'Process this package (enter duties)';
       $('proc-heading').textContent = r.processed ? 'Correct Customs Duties' : 'Process Invoice';
       $('proc-btn').textContent = r.processed ? 'Update Duties' : 'Process';
       $('proc-duties').value = r.processed ? r.customs_duties : '';
       $('proc-assessment').value = r.assessment_c || '';
       $('print-btn').classList.toggle('hidden', !r.processed);
+      $('print-btn2').classList.toggle('hidden', !r.processed);
     }
     if (withPayment && session.role === 'accounting' && r.processed) {
       $('pay-section').classList.remove('hidden');
@@ -607,6 +617,7 @@
   }
 
   $('proc-assessment').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+  $('proc-open').addEventListener('click', () => { $('proc-open-wrap').classList.add('hidden'); $('proc-section').classList.remove('hidden'); setTimeout(() => $('proc-duties').focus(), 50); });
   $('proc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!current) return;
@@ -624,6 +635,7 @@
     finally { btn.disabled = false; }
   });
 
+  $('print-btn2').addEventListener('click', () => $('print-btn').click());
   $('print-btn').addEventListener('click', async () => {
     if (!current) return;
     const btn = $('print-btn'); btn.disabled = true; hide($('detail-msg'));
